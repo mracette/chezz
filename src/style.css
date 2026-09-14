@@ -2149,3 +2149,36 @@ sup {
     margin-left: 5px;
   }
 }
+/* Keep the action controls inside their column when inspected pieces show extra effects. */
+.command-panel {
+  min-height: 0;
+}
+.piece-panel {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #63877960 transparent;
+}
+.objective-card h2 {
+  margin-top: 8px;
+}
+.objective-card .material-count {
+  margin-top: 9px;
+}
+.objective-card .material-count strong {
+  font-size: 37px;
+}
+.objective-card .bonus {
+  margin-top: 12px;
+  padding-top: 11px;
+}
+.objective-card .round-row {
+  margin-top: 12px;
+  padding-top: 10px;
+}
+@media (max-width: 640px) {
+  .piece-panel {
+    min-height: 165px;
+    overflow: visible;
+  }
+}
