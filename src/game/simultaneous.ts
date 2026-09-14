@@ -1,0 +1,128 @@
+export type Side = "white" | "black";
+export type Kind = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
+export type Pos = { x: number; y: number };
+export type Unit = Pos & { id: string; side: Side; kind: Kind; hp: number };
+export type Order = { unitId: string; to: Pos };
+export type Game = { units: Unit[]; planned: Order[]; turn: number; log: string[]; winner: Side | null };
+
+export const HP: Record<Kind, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 5 };
+export const ICON: Record<Side, Record<Kind, string>> = {
+  white: { king: "♔", queen: "♕", rook: "♖", bishop: "♗", knight: "♘", pawn: "♙" },
+  black: { king: "♚", queen: "♛", rook: "♜", bishop: "♝", knight: "♞", pawn: "♟" },
+};
+export const name = (p: Pos) => "abcdefgh"[p.x] + (8 - p.y);
+export const same = (a: Pos, b: Pos) => a.x === b.x && a.y === b.y;
+const inside = (p: Pos) => p.x >= 0 && p.x < 8 && p.y >= 0 && p.y < 8;
+export const at = (g: Game, p: Pos) => g.units.find((u) => same(u, p));
+const unit = (g: Game, id: string) => g.units.find((u) => u.id === id);
+
+// An advanced, symmetric six-piece position. Immediate tensions make the
+// simultaneous rules legible on turn one without a long opening march.
+const setup: [Kind, number, number][] = [
+  ["king", 4, 7], ["queen", 3, 5], ["rook", 0, 6],
+  ["bishop", 2, 4], ["knight", 5, 5], ["pawn", 4, 4],
+];
+export function newGame(): Game {
+  const units: Unit[] = [];
+  setup.forEach(([kind, x, y], i) => units.push({ id: `w${i}`, side: "white", kind, x, y, hp: HP[kind] }));
+  setup.forEach(([kind, x, y], i) => units.push({ id: `b${i}`, side: "black", kind, x, y: 7 - y, hp: HP[kind] }));
+  return { units, planned: [], turn: 1, log: ["Plan up to three white orders, then resolve simultaneously."], winner: null };
+}
+
+function rays(g: Game, u: Unit, dirs: number[][]) {
+  const out: Pos[] = [];
+  for (const [dx, dy] of dirs) for (let d = 1; d < 8; d++) {
+    const p = { x: u.x + dx * d, y: u.y + dy * d };
+    if (!inside(p)) break;
+    const occupant = at(g, p);
+    if (!occupant) out.push(p);
+    else { if (occupant.side !== u.side) out.push(p); break; }
+  }
+  return out;
+}
+export function legal(g: Game, u: Unit): Pos[] {
+  const empty = (p: Pos) => inside(p) && !at(g, p);
+  if (u.kind === "pawn") {
+    const dy = u.side === "white" ? -1 : 1, out: Pos[] = [];
+    const forward = { x: u.x, y: u.y + dy };
+    if (empty(forward)) out.push(forward);
+    for (const dx of [-1, 1]) {
+      const p = { x: u.x + dx, y: u.y + dy }, target = at(g, p);
+      if (inside(p) && target?.side !== u.side) out.push(p);
+    }
+    return out;
+  }
+  if (u.kind === "knight") return [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]]
+    .map(([x,y]) => ({ x: u.x + x, y: u.y + y })).filter(p => inside(p) && at(g,p)?.side !== u.side);
+  if (u.kind === "king") return [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+    .map(([x,y]) => ({ x: u.x + x, y: u.y + y })).filter(p => inside(p) && at(g,p)?.side !== u.side);
+  const orthogonal = [[1,0],[-1,0],[0,1],[0,-1]], diagonal = [[1,1],[1,-1],[-1,1],[-1,-1]];
+  return rays(g, u, u.kind === "rook" ? orthogonal : u.kind === "bishop" ? diagonal : [...orthogonal, ...diagonal]);
+}
+export function queue(g: Game, order: Order): Game {
+  if (g.winner || g.planned.length >= 3 || g.planned.some(o => o.unitId === order.unitId || same(o.to, order.to))) return g;
+  const u = unit(g, order.unitId);
+  if (!u || u.side !== "white" || !legal(g, u).some(p => same(p, order.to))) return g;
+  return { ...g, planned: [...g.planned, order] };
+}
+export function removeOrder(g: Game, index: number): Game { return { ...g, planned: g.planned.filter((_, i) => i !== index) }; }
+
+function distance(a: Pos, b: Pos) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+function enemyOrders(g: Game): Order[] {
+  const choices: { order: Order; score: number }[] = [];
+  const whiteKing = g.units.find(u => u.side === "white" && u.kind === "king")!;
+  for (const u of g.units.filter(u => u.side === "black")) for (const to of legal(g, u)) {
+    const target = at(g, to);
+    choices.push({ order: { unitId: u.id, to }, score: target?.side === "white" ? 100 + HP[target.kind] : -distance(to, whiteKing) });
+  }
+  choices.sort((a,b) => b.score - a.score || a.order.unitId.localeCompare(b.order.unitId));
+  const result: Order[] = [];
+  for (const choice of choices) if (result.length < 3 && !result.some(o => o.unitId === choice.order.unitId || same(o.to, choice.order.to))) result.push(choice.order);
+  return result;
+}
+function fight(a: Unit, b: Unit, destination: Pos, events: string[]): Unit | null {
+  if (a.hp === b.hp) { events.push(`${label(a)} and ${label(b)} destroy each other at ${name(destination)}.`); return null; }
+  const winner = a.hp > b.hp ? a : b, loser = winner === a ? b : a;
+  winner.hp -= loser.hp; winner.x = destination.x; winner.y = destination.y;
+  events.push(`${label(winner)} defeats ${label(loser)} at ${name(destination)} and has ${winner.hp} HP left.`);
+  return winner;
+}
+const label = (u: Unit) => `${u.side === "white" ? "White" : "Black"} ${u.kind}`;
+
+export function resolve(g: Game): Game {
+  if (g.winner || !g.planned.length) return g;
+  const black = enemyOrders(g), orders = [...g.planned, ...black];
+  const original = new Map(g.units.map(u => [u.id, { ...u }]));
+  const byUnit = new Map(orders.map(o => [o.unitId, o]));
+  const handled = new Set<string>(), survivors = new Map(g.units.map(u => [u.id, { ...u }])), events: string[] = [];
+  const remove = (id: string) => survivors.delete(id);
+  const put = (u: Unit) => survivors.set(u.id, u);
+  // Reciprocal target orders are direct fights. Empty-square contests use the
+  // same HP subtraction rule.
+  for (let i = 0; i < orders.length; i++) for (let j = i + 1; j < orders.length; j++) {
+    const a = original.get(orders[i].unitId)!, b = original.get(orders[j].unitId)!;
+    const mutual = same(orders[i].to, b) && same(orders[j].to, a);
+    const contest = !at(g, orders[i].to) && same(orders[i].to, orders[j].to);
+    if (!mutual && !contest) continue;
+    handled.add(a.id); handled.add(b.id); remove(a.id); remove(b.id);
+    const winner = fight({ ...a }, { ...b }, contest ? orders[i].to : (a.hp > b.hp ? orders[i].to : orders[j].to), events);
+    if (winner) put(winner);
+  }
+  for (const order of orders) {
+    if (handled.has(order.unitId) || !survivors.has(order.unitId)) continue;
+    const mover = survivors.get(order.unitId)!, target = at(g, order.to), targetOrder = target ? byUnit.get(target.id) : undefined;
+    if (target && target.side !== mover.side && !handled.has(target.id) && !targetOrder) {
+      remove(mover.id); remove(target.id);
+      const winner = fight({ ...mover }, { ...target }, order.to, events);
+      if (winner) put(winner);
+    } else {
+      mover.x = order.to.x; mover.y = order.to.y;
+      events.push(target ? `${label(mover)} takes ${name(order.to)} as ${label(target)} moves away.` : `${label(mover)} moves to ${name(order.to)}.`);
+    }
+  }
+  const units = [...survivors.values()];
+  const whiteKing = units.some(u => u.side === "white" && u.kind === "king"), blackKing = units.some(u => u.side === "black" && u.kind === "king");
+  const winner: Side | null = !whiteKing ? "black" : !blackKing ? "white" : null;
+  if (winner) events.unshift(`${winner === "white" ? "White" : "Black"} captures the king and wins.`);
+  return { units, planned: [], turn: g.turn + 1, log: events.slice(0, 8), winner };
+}
