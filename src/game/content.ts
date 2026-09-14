@@ -253,8 +253,7 @@ export type Encounter = {
   name: string;
   epithet: string;
   description: string;
-  target: number;
-  rounds: number;
+  kingHp: number;
   reward: number;
   bonus: string;
   bonusId: string;
@@ -267,9 +266,8 @@ export const ENCOUNTERS: Encounter[] = [
     name: "The Arrival",
     epithet: "OPENING BATTLE",
     description:
-      "Win 3 net material within 5 rounds. Earn a bonus if no friendly pieces are lost.",
-    target: 3,
-    rounds: 5,
+      "Capture the enemy king. Keep your pieces alive for the bonus.",
+    kingHp: 8,
     reward: 20,
     bonus: "Lose no pieces",
     bonusId: "no-loss",
@@ -278,6 +276,7 @@ export const ENCOUNTERS: Encounter[] = [
       ["pawn", 5, 2],
       ["bishop", 4, 1],
       ["rook", 6, 1],
+      ["king", 4, 0],
     ],
     holes: [],
   },
@@ -285,9 +284,8 @@ export const ENCOUNTERS: Encounter[] = [
     name: "Crossed Signals",
     epithet: "BISHOP ATTACKS",
     description:
-      "Win 5 net material within 6 rounds. Capture an enemy with your bishop for a bonus.",
-    target: 5,
-    rounds: 6,
+      "Enemy bishops cover the approach. Use cover to reach their king.",
+    kingHp: 10,
     reward: 24,
     bonus: "Capture with your bishop",
     bonusId: "bishop-kill",
@@ -296,7 +294,7 @@ export const ENCOUNTERS: Encounter[] = [
       ["bishop", 1, 1],
       ["bishop", 6, 1],
       ["rook", 4, 2],
-      ["knight", 5, 0],
+      ["king", 4, 0],
     ],
     holes: [{ x: 3, y: 2 }],
   },
@@ -304,9 +302,8 @@ export const ENCOUNTERS: Encounter[] = [
     name: "The Offering",
     epithet: "SACRIFICE BONUS",
     description:
-      "Win 4 net material within 6 rounds. Losing your bishop earns a bonus, but reduces your net material.",
-    target: 4,
-    rounds: 6,
+      "Two rooks defend the king. Sacrificing your bishop is optional.",
+    kingHp: 10,
     reward: 26,
     bonus: "Sacrifice your bishop",
     bonusId: "sacrifice",
@@ -314,8 +311,8 @@ export const ENCOUNTERS: Encounter[] = [
       ["rook", 2, 2],
       ["rook", 5, 1],
       ["pawn", 4, 3],
-      ["knight", 6, 2],
       ["bishop", 0, 1],
+      ["king", 3, 0],
     ],
     holes: [
       { x: 3, y: 3 },
@@ -325,10 +322,8 @@ export const ENCOUNTERS: Encounter[] = [
   {
     name: "Broken Geometry",
     epithet: "MISSING SQUARES",
-    description:
-      "Win 5 net material within 7 rounds. Knights can jump over the missing squares.",
-    target: 5,
-    rounds: 7,
+    description: "Use your knight to cross the gaps and reach the king.",
+    kingHp: 12,
     reward: 28,
     bonus: "Capture with your knight",
     bonusId: "knight-kill",
@@ -338,6 +333,7 @@ export const ENCOUNTERS: Encounter[] = [
       ["pawn", 2, 2],
       ["bishop", 6, 2],
       ["knight", 4, 0],
+      ["king", 3, 0],
     ],
     holes: [
       { x: 2, y: 3 },
@@ -351,9 +347,8 @@ export const ENCOUNTERS: Encounter[] = [
     name: "The Last Exchange",
     epithet: "FINAL REGULAR BATTLE",
     description:
-      "Win 7 net material within 8 rounds. Keep your queen alive for a bonus.",
-    target: 7,
-    rounds: 8,
+      "The king has a queen and two rooks. Keep your queen alive for the bonus.",
+    kingHp: 14,
     reward: 32,
     bonus: "Keep your queen alive",
     bonusId: "queen-alive",
@@ -362,8 +357,8 @@ export const ENCOUNTERS: Encounter[] = [
       ["rook", 1, 2],
       ["rook", 6, 2],
       ["bishop", 2, 0],
-      ["knight", 5, 2],
       ["pawn", 3, 3],
+      ["king", 4, 0],
     ],
     holes: [
       { x: 0, y: 3 },
@@ -374,9 +369,8 @@ export const ENCOUNTERS: Encounter[] = [
     name: "The Iron Crown",
     epithet: "BOSS BATTLE",
     description:
-      "Defeat the enemy king within 9 rounds. Its adjacent guards reduce the damage it takes.",
-    target: 0,
-    rounds: 9,
+      "Adjacent guards reduce damage to the Iron Crown by 2. Displace or defeat them to expose the king.",
+    kingHp: 20,
     reward: 0,
     bonus: "Keep your king above half health",
     bonusId: "king-health",

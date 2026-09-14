@@ -5,6 +5,7 @@ import {
   moves,
   attackSquares,
   attack,
+  attackDistances,
   move,
   undoMove,
   dangerSquares,
@@ -31,13 +32,35 @@ function arena(): Game {
     makePiece("king", "player", 7, 7, "king"),
     makePiece("rook", "player", 1, 4, "rook"),
     makePiece("pawn", "enemy", 1, 3, "enemy"),
+    makePiece("king", "enemy", 0, 0, "enemy-king", 8),
   ];
   g.gambits = [];
   return g;
 }
 describe("activation and geometry", () => {
+  it("finds an attack route around a wall instead of waiting behind it", () => {
+    const g = arena();
+    g.pieces = [
+      makePiece("queen", "enemy", 3, 2, "queen"),
+      makePiece("pawn", "player", 3, 4, "pawn"),
+    ];
+    g.holes = [
+      { x: 2, y: 3 },
+      { x: 3, y: 3 },
+      { x: 4, y: 3 },
+    ];
+    const route = attackDistances(g, g.pieces[0]);
+    expect(route.get("d6")).toBeGreaterThan(0);
+    g.turn = "enemy";
+    const n = enemyStep(g);
+    expect(n.pieces.find((p) => p.id === "queen")).not.toMatchObject({
+      x: 3,
+      y: 2,
+    });
+  });
   it("danger includes move-then-attack and counts each enemy only once", () => {
     const g = arena();
+    g.pieces = g.pieces.filter((p) => p.id !== "enemy-king");
     g.pieces.push(makePiece("rook", "enemy", 3, 1, "second"));
     g.pieces.find((p) => p.id === "enemy")!.acted = true;
     const before = structuredClone(g);
@@ -213,7 +236,7 @@ describe("effects and objectives", () => {
     g.pieces.pop();
     expect(previewDamage(g, g.pieces[1], g.pieces[2])).toBe(4);
   });
-  it("king death resolves immediately even with a completed material target", () => {
+  it("player king death resolves immediately regardless of material", () => {
     const g = arena();
     g.turn = "enemy";
     g.material = 99;
@@ -222,22 +245,29 @@ describe("effects and objectives", () => {
     g.pieces[0].hp = 1;
     expect(attack(g, "enemy", "king").screen).toBe("defeat");
   });
-  it("normal success is checked after the enemy phase, not mid-turn", () => {
+  it("capturing a regular enemy king wins immediately with defenders left", () => {
     const g = arena();
-    g.material = 3;
-    expect(g.screen).toBe("battle");
-    let n = endPhase(g);
-    n.pieces.forEach((p) => (p.acted = true));
-    n = endEnemyPhase(n);
+    g.material = -20;
+    const king = g.pieces.find((p) => p.id === "enemy-king")!;
+    king.x = 2;
+    king.y = 4;
+    king.hp = 1;
+    const n = attack(g, "rook", king.id);
     expect(n.screen).toBe("reward");
+    expect(n.pieces.some((p) => p.id === "enemy")).toBe(true);
     expect(n.gold).toBe(g.gold + 32);
+    expect(n.material).toBe(-20);
+    expect(attack(n, "rook", "enemy")).toBe(n);
   });
-  it("round deadline causes defeat when material target is unmet", () => {
+  it("material and round count never finish a battle while both kings live", () => {
     const g = arena();
-    g.round = 5;
+    g.material = 99;
+    g.round = 50;
     g.turn = "enemy";
     g.pieces.forEach((p) => (p.acted = true));
-    expect(endEnemyPhase(g).screen).toBe("defeat");
+    const n = endEnemyPhase(g);
+    expect(n.screen).toBe("battle");
+    expect(n.round).toBe(51);
   });
   it("optional sacrifice is based on an actual friendly bishop death", () => {
     const g = arena();
@@ -327,6 +357,45 @@ describe("run and persistence", () => {
     expect(n.gold).toBe(78);
     expect(n.gambits).toContain("blood-price");
     expect(buy(n, 0)).toBe(n);
+  });
+  it("old saves gain a king without losing progress or overlapping a piece", () => {
+    const old = newGame();
+    old.pieces = old.pieces.filter(
+      (p) => !(p.side === "enemy" && p.kind === "king"),
+    );
+    old.pieces.find((p) => p.id === "e0")!.x = 4;
+    old.pieces.find((p) => p.id === "e0")!.y = 0;
+    old.gold = 41;
+    old.round = 3;
+    const restored = loadGame(
+      JSON.stringify({ ...old, rulesVersion: undefined }),
+    )!;
+    expect(restored.rulesVersion).toBe(2);
+    expect(restored.gold).toBe(41);
+    expect(restored.round).toBe(3);
+    expect(
+      restored.pieces.filter((p) => p.side === "enemy" && p.kind === "king"),
+    ).toHaveLength(1);
+    expect(new Set(restored.pieces.map((p) => `${p.x},${p.y}`)).size).toBe(
+      restored.pieces.length,
+    );
+    expect(loadGame(JSON.stringify(restored))).toEqual(restored);
+  });
+  it("every encounter spawns exactly one king per side", () => {
+    let g = newGame();
+    for (let floor = 0; floor < 6; floor++) {
+      expect(
+        g.pieces.filter((p) => p.kind === "king" && p.side === "enemy"),
+      ).toHaveLength(1);
+      expect(
+        g.pieces.filter((p) => p.kind === "king" && p.side === "player"),
+      ).toHaveLength(1);
+      expect(new Set(g.pieces.map((p) => `${p.x},${p.y}`)).size).toBe(
+        g.pieces.length,
+      );
+      if (floor < 5)
+        g = continueRun({ ...g, screen: "shop", eventTaken: true });
+    }
   });
   it("new battles restore troops but preserve king health, upgrades, and build", () => {
     const g = arena();

@@ -162,6 +162,18 @@ export default function App() {
   const debugAvailable =
     import.meta.env.DEV || new URLSearchParams(location.search).has("lab");
   const encounter = ENCOUNTERS[game.floor];
+  const enemyKing = game.pieces.find(
+    (p) => p.side === "enemy" && p.kind === "king",
+  );
+  const bossGuarded =
+    encounter.boss &&
+    enemyKing &&
+    game.pieces.some(
+      (p) =>
+        p.side === "enemy" &&
+        p.id !== enemyKing.id &&
+        Math.abs(p.x - enemyKing.x) + Math.abs(p.y - enemyKing.y) === 1,
+    );
   const chosen = game.pieces.find((p) => p.id === selected);
   const hovering = hover ? pieceAt(game, hover) : undefined;
   const inspected = hovering ?? chosen;
@@ -659,49 +671,32 @@ export default function App() {
             <div className="eyebrow">
               YOUR OBJECTIVE <span>◇</span>
             </div>
-            <h2>
-              {encounter.boss
-                ? "Defeat the king."
-                : "Win " + encounter.target + " material."}
-            </h2>
+            <h2>Capture the king.</h2>
             <p>
               {encounter.boss
-                ? "His adjacent guards reduce incoming damage by 2."
-                : "Captured enemy value minus your losses. Hold the target through the enemy phase."}
+                ? bossGuarded
+                  ? "Guarded: adjacent allies reduce damage by 2."
+                  : "Exposed: the king has no adjacent guards."
+                : "Reduce the enemy king’s HP to zero. Keep yours alive."}
             </p>
-            {encounter.boss ? (
-              <div className="material-count boss-count">
-                ♚{" "}
-                <strong>
-                  {game.pieces.find(
-                    (p) => p.side === "enemy" && p.kind === "king",
-                  )?.hp ?? 0}
-                </strong>
-                <span> / 20 HP</span>
-              </div>
-            ) : (
-              <>
-                <div className="material-count">
-                  <strong>{game.material}</strong>
-                  <span> / {encounter.target}</span>
-                  <small>MATERIAL</small>
-                </div>
-                <div className="objective-track">
-                  <i
-                    style={{
-                      width:
-                        Math.max(
-                          0,
-                          Math.min(
-                            100,
-                            (game.material / encounter.target) * 100,
-                          ),
-                        ) + "%",
-                    }}
-                  />
-                </div>
-              </>
-            )}
+            <div className="material-count boss-count">
+              ♚ <strong>{enemyKing?.hp ?? 0}</strong>
+              <span> / {enemyKing?.maxHp ?? encounter.kingHp} HP</span>
+            </div>
+            <div
+              className="objective-track"
+              role="progressbar"
+              aria-label="Enemy king HP"
+              aria-valuemin={0}
+              aria-valuemax={enemyKing?.maxHp ?? encounter.kingHp}
+              aria-valuenow={enemyKing?.hp ?? 0}
+            >
+              <i
+                style={{
+                  width: `${((enemyKing?.hp ?? 0) / (enemyKing?.maxHp ?? encounter.kingHp)) * 100}%`,
+                }}
+              />
+            </div>
             <div className="bonus">
               <span className={bonusMet(game) ? "bonus-met" : ""}>
                 {bonusMet(game) ? "✧" : "◇"}
@@ -713,10 +708,7 @@ export default function App() {
             </div>
             <div className="round-row">
               <span>ROUND</span>
-              <strong>
-                {String(game.round).padStart(2, "0")}{" "}
-                <small>/ {String(encounter.rounds).padStart(2, "0")}</small>
-              </strong>
+              <strong>{String(game.round).padStart(2, "0")}</strong>
             </div>
           </div>
           <div className="piece-panel">
@@ -737,7 +729,11 @@ export default function App() {
                       {PIECES[inspected.kind].name}
                       {upgraded(game, inspected) && <sup>✧</sup>}
                     </h3>
-                    <small>{PIECES[inspected.kind].role}</small>
+                    <small>
+                      {inspected.kind === "king" && inspected.side === "enemy"
+                        ? "Capture to win"
+                        : PIECES[inspected.kind].role}
+                    </small>
                   </div>
                 </div>
                 <div className="piece-stats">
@@ -764,7 +760,11 @@ export default function App() {
                     <span>MOVE</span>
                   </div>
                 </div>
-                <p className="piece-rule">{PIECES[inspected.kind].rule}</p>
+                <p className="piece-rule">
+                  {inspected.kind === "king" && inspected.side === "enemy"
+                    ? "Capture this king to win. Its adjacent allies take 1 less damage."
+                    : PIECES[inspected.kind].rule}
+                </p>
                 {inspected.ward > 0 && (
                   <div className="status-pill">
                     ◇ WARD · ABSORBS {inspected.ward}
@@ -938,7 +938,7 @@ export default function App() {
         {debugAvailable && (
           <button onClick={() => setDebug(true)}>DEVELOPER LAB</button>
         )}
-        <span>FLOOR ONE · v0.1</span>
+        <span>FLOOR ONE · v0.2</span>
       </footer>
       {toast && (
         <div className="toast" role="status">
@@ -1009,8 +1009,8 @@ export default function App() {
         <Modal label="Encounter complete" className="reward-modal">
           <div className="eyebrow">BATTLE COMPLETE</div>
           <Art type="sun" />
-          <h1>Battle won.</h1>
-          <p>You completed {encounter.name}.</p>
+          <h1>King captured.</h1>
+          <p>You captured the enemy king in {encounter.name}.</p>
           <div className="reward-stats">
             <div>
               <strong>+{game.reward}</strong>
@@ -1177,7 +1177,7 @@ export default function App() {
               ? "You defeated the Iron Crown and completed all six battles."
               : game.kingHp <= 0
                 ? "Your king ran out of health."
-                : "You did not meet the battle objective."}
+                : "Your king was captured."}
           </p>
           <div className="reward-stats">
             <div>
@@ -1239,26 +1239,25 @@ export default function App() {
             </div>
             <div>
               <b>02</b>
-              <h3>Make the exchange count.</h3>
+              <h3>Capture the enemy king.</h3>
               <p>
-                Reduce a piece’s health to zero to capture it. Net material is
-                enemy value captured minus your own losses: pawn 1, knight or
-                bishop 3, rook 5, queen 9. Meet the target at the end of a round
-                to advance.
+                Reduce the enemy king’s health to zero to win immediately. Other
+                enemies may remain on the board. There is no round limit.
+                Optional objectives award extra gold.
               </p>
             </div>
             <div>
               <b>03</b>
-              <h3>Protect your constant.</h3>
+              <h3>Protect your king.</h3>
               <p>
                 King death ends the run immediately. Its health persists. Your
                 other pieces reform at full health between battles, keeping
-                upgrades. The boss’s king must actually die.
+                upgrades. Your king must survive every battle.
               </p>
             </div>
             <div>
               <b>04</b>
-              <h3>Rewrite a rule or two.</h3>
+              <h3>Upgrade your army.</h3>
               <p>
                 Gambits persist across the run. Upgrades modify a piece type.
                 Consumables disappear after use, with one allowed each player

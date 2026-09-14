@@ -255,7 +255,7 @@ test("consumable targeting and settings work on a phone viewport", async ({
 test("a complete six-battle run is playable through the browser UI", async ({
   page,
 }) => {
-  test.setTimeout(360000);
+  test.setTimeout(600000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -381,12 +381,50 @@ test("a complete six-battle run is playable through the browser UI", async ({
   expect((await state(page)).screen).toBe("victory");
   expect(errors).toEqual([]);
 });
+test("a regular king capture wins with defenders still alive", async ({
+  page,
+}) => {
+  const g = newGame();
+  g.material = -10;
+  const queen = g.pieces.find((p) => p.id === "p1")!;
+  queen.x = 3;
+  queen.y = 2;
+  const king = g.pieces.find((p) => p.side === "enemy" && p.kind === "king")!;
+  king.x = 3;
+  king.y = 0;
+  king.hp = 1;
+  await page.addInitScript(
+    (g) => localStorage.setItem("chezz.run.v1", JSON.stringify(g)),
+    g,
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Capture the king." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", { name: "Enemy king HP" }),
+  ).toHaveAttribute("aria-valuenow", "1");
+  await page.getByRole("button", { name: /^d6 player queen/ }).press("Enter");
+  await page.getByRole("button", { name: /^d8 enemy king/ }).press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "King captured." }),
+  ).toBeVisible();
+  expect((await state(page)).pieces.some((p) => p.side === "enemy")).toBe(true);
+  expect((await state(page)).material).toBe(-10);
+  await page.getByRole("button", { name: "Visit shop" }).click();
+  await page.getByRole("button", { name: "Continue", exact: false }).click();
+  await expect(
+    page.getByRole("progressbar", { name: "Enemy king HP" }),
+  ).toHaveAttribute("aria-valuenow", "10");
+});
 test("the boss can be defeated and produces a results screen", async ({
   page,
 }) => {
   const g = newGame();
   g.floor = 5;
-  g.pieces = g.pieces.filter((p) => p.kind === "king" || p.kind === "queen");
+  g.pieces = g.pieces.filter(
+    (p) => p.side === "player" && (p.kind === "king" || p.kind === "queen"),
+  );
   g.pieces.push({
     id: "boss",
     kind: "king",

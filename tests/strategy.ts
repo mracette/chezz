@@ -1,6 +1,8 @@
 import { ENCOUNTERS, PIECES } from "../src/game/content";
 import {
   distance,
+  attackDistances,
+  coord,
   moves,
   targets,
   move,
@@ -28,15 +30,17 @@ export function plan(g: Game): Plan | undefined {
     (p) => p.side === "player" && !p.acted && (!g.active || g.active === p.id),
   );
   const enemies = g.pieces.filter((p) => p.side === "enemy");
+  const alone = g.pieces.filter((p) => p.side === "player").length === 1;
   let best: { score: number; plan: Plan } | undefined;
-  for (const p of ready)
+  for (const p of ready) {
+    const approach = attackDistances(g, p);
     for (const pos of [{ x: p.x, y: p.y }, ...moves(g, p)]) {
       const sim = same(pos, p) ? g : move(g, p.id, pos),
         sp = sim.pieces.find((u) => u.id === p.id)!;
       const nearest = Math.min(...enemies.map((u) => distance(sp, u)));
-      let score = -nearest * 0.5,
+      let score = -(approach.get(coord(sp)) ?? 64) * 0.5,
         target: string | undefined;
-      if (p.kind === "king") score = -Math.abs(nearest - 4) * 0.5;
+      if (p.kind === "king" && !alone) score = -Math.abs(nearest - 4) * 0.5;
       for (const t of targets(sim, sp)) {
         const vs = victims(sim, sp, t);
         const value = vs.reduce((sum, u) => {
@@ -45,7 +49,7 @@ export function plan(g: Game): Plan | undefined {
             sum +
             Math.min(dmg, u.hp) * 2 +
             (dmg >= u.hp ? PIECES[u.kind].value * 2 + 9 : 0) +
-            (u.kind === "king" ? 8 : 0)
+            (u.kind === "king" ? (dmg >= u.hp ? 50 : 8) : 0)
           );
         }, 0);
         if (value > score) {
@@ -54,7 +58,7 @@ export function plan(g: Game): Plan | undefined {
         }
       }
       // Keep the king away from enemy movement-plus-attack reach when possible.
-      if (p.kind === "king") {
+      if (p.kind === "king" && !alone) {
         const danger = enemies.reduce(
           (n, u) =>
             n +
@@ -69,6 +73,7 @@ export function plan(g: Game): Plan | undefined {
       if (!best || score > best.score)
         best = { score, plan: { id: p.id, pos, target } };
     }
+  }
   return best?.plan;
 }
 export function playerStep(g: Game): Game {
@@ -113,7 +118,7 @@ export function shopStrategy(g: Game): Game {
   }
   return continueRun(g);
 }
-export function simulate(start: Game, maxActions = 800) {
+export function simulate(start: Game, maxActions = 800, shop = true) {
   let g = start,
     actions = 0;
   const battles: {
@@ -131,7 +136,10 @@ export function simulate(start: Game, maxActions = 800) {
     const before = g;
     if (g.screen === "battle")
       g = g.turn === "player" ? playerStep(g) : enemyStep(g);
-    else if (g.screen === "reward" || g.screen === "shop") g = shopStrategy(g);
+    else if (g.screen === "reward" || g.screen === "shop")
+      g = shop
+        ? shopStrategy(g)
+        : continueRun(g.screen === "reward" ? openShop(g) : g);
     else if (g.screen === "event")
       g = chooseEvent(g, g.kingHp < g.kingMax - 4 ? "heal" : "gold");
     if (before.screen === "battle" && g.screen !== "battle")

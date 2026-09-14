@@ -8,9 +8,9 @@ Chezz uses chess as the visual vocabulary for a whole-army tactics roguelike. It
 
 The player gets the first full phase. Each unit can move once, then attack once. Attacking ends the activation. Once a move is committed, that unit must finish before another activates. Enemy units follow the same rules. No half-turn, alternating-single-piece mode, or move-system comparison is implemented.
 
-HP, attack, movement, attack range/shape, and material value distinguish pieces. Pawns protect, rooks push, knights jump, bishops project diagonal damage, queens offer versatile offense, and kings protect nearby allies. A king is the run's vulnerable constant.
+HP, attack, movement, attack range/shape, and material value distinguish pieces. Pawns protect, rooks push, knights jump, bishops project diagonal damage, queens offer versatile offense, and kings protect nearby allies. Losing your king ends the run.
 
-An ordinary encounter is won when the required net material is held through the enemy phase. Failure to meet it by the deadline ends the run. Objectives and optional bonuses are evaluated from actual combat history. Boss victory is immediate on enemy king death, and player king death takes priority.
+Every encounter is won immediately when the enemy king is captured. Player king death takes priority. There are no material thresholds or round deadlines. Material remains a results statistic; optional bonuses use actual combat history.
 
 The Iron Crown gains 2 protection while orthogonally adjacent to an ally. Its rook guards prefer staying close. Removing or displacing those guards exposes the king.
 
@@ -24,7 +24,7 @@ The developer lab and tests exercise these interactions without connecting the r
 
 There are five ordinary encounters and one boss. Shops occur after each ordinary encounter. After the third shop, the player chooses between healing and trading king health for gold. Other pieces reform between encounters, allowing sacrifice builds to function without introducing recruitment.
 
-The Eternal and Fleeting sets implement the mahogany/speed-mat starting concepts within the cosmic visual direction. Set choice is independent of the seed.
+The Mahogany Set and Speed Mat implement the mahogany/speed-mat starting concepts within the cosmic visual direction. Set choice is independent of the seed.
 
 ## Art direction
 

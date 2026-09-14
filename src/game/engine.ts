@@ -31,6 +31,7 @@ export type Piece = Pos & {
 };
 export type Game = {
   version: 1;
+  rulesVersion: 2;
   seed: string;
   rng: number;
   set: string;
@@ -133,6 +134,7 @@ export function newGame(seed = "BETWEEN-WORLDS", set = "mahogany"): Game {
   const normalizedSeed = seed.trim().slice(0, 48) || "BETWEEN-WORLDS";
   const g: Game = {
     version: 1,
+    rulesVersion: 2,
     seed: normalizedSeed,
     rng: hashSeed(normalizedSeed) || 1,
     set: s.id,
@@ -188,7 +190,7 @@ function startBattle(g: Game) {
         x,
         y,
         "e" + i,
-        k === "king" ? 20 : PIECES[k].hp + (g.floor >= 4 ? 1 : 0),
+        k === "king" ? e.kingHp : PIECES[k].hp + (e.boss ? 1 : 0),
       ),
     ),
   );
@@ -324,6 +326,38 @@ export function targets(g: Game, p: Piece) {
     (t) => t.side !== p.side && squares.some((s) => same(s, t)),
   );
 }
+// Distance to a square this piece can attack from, accounting for obstacles.
+export function attackDistances(g: Game, p: Piece): Map<string, number> {
+  const board = { ...g, pieces: g.pieces.filter((u) => u.id !== p.id) };
+  const cells = Array.from({ length: 64 }, (_, i) => ({
+    x: i % 8,
+    y: Math.floor(i / 8),
+  })).filter((q) => !isHole(g, q) && !pieceAt(board, q));
+  const distances = new Map<string, number>();
+  const queue: Pos[] = [];
+  for (const q of cells) {
+    if (
+      attackSquares(board, { ...p, ...q }, true).some((t) => {
+        const target = pieceAt(board, t);
+        return target && target.side !== p.side;
+      })
+    ) {
+      distances.set(coord(q), 0);
+      queue.push(q);
+    }
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const at = queue[i];
+    for (const q of cells) {
+      const d = distance(at, q);
+      if (distances.has(coord(q)) || (p.kind === "knight" ? d > 3 : d !== 1))
+        continue;
+      distances.set(coord(q), distances.get(coord(at))! + 1);
+      queue.push(q);
+    }
+  }
+  return distances;
+}
 export type DangerSquare = Pos & { attackers: string[] };
 export function dangerSquares(g: Game): DangerSquare[] {
   const danger = new Map<string, DangerSquare>();
@@ -419,10 +453,7 @@ function terminal(g: Game) {
     log(g, "Your king has no health left. Run ended.");
     return true;
   }
-  if (
-    ENCOUNTERS[g.floor].boss &&
-    !g.pieces.some((p) => p.kind === "king" && p.side === "enemy")
-  ) {
+  if (!g.pieces.some((p) => p.kind === "king" && p.side === "enemy")) {
     win(g);
     return true;
   }
@@ -632,7 +663,7 @@ function win(g: Game) {
   g.gold += g.reward;
   g.active = null;
   g.screen = ENCOUNTERS[g.floor].boss ? "victory" : "reward";
-  log(g, "Encounter complete. " + g.reward + " gold recovered.");
+  log(g, "Enemy king captured. " + g.reward + " gold earned.");
 }
 export function endPhase(g0: Game): Game {
   if (g0.screen !== "battle" || g0.turn !== "player") return g0;
@@ -663,21 +694,6 @@ export function endEnemyPhase(g0: Game): Game {
   const g = structuredClone(g0);
   g.totalRounds++;
   if (terminal(g)) return g;
-  const e = ENCOUNTERS[g.floor];
-  if (!e.boss && g.material >= e.target) {
-    win(g);
-    return g;
-  }
-  if (g.round >= e.rounds) {
-    g.screen = "defeat";
-    log(g, "Round limit reached. Objective not met.");
-    return g;
-  }
-  if (!g.pieces.some((p) => p.side === "enemy")) {
-    g.screen = "defeat";
-    log(g, "No enemies remain, but the material target was not met.");
-    return g;
-  }
   g.round++;
   g.turn = "player";
   g.active = null;
@@ -746,26 +762,40 @@ export function enemyStep(g0: Game): Game {
     { score: number; id: string; pos: Pos; target?: string } | undefined;
   const allies = g0.pieces.filter((p) => p.side === "player");
   for (const p of available) {
+    const approach = attackDistances(g0, p);
     const choices = [{ x: p.x, y: p.y }, ...moves(g0, p)];
     for (const pos of choices) {
       const sim = same(pos, p) ? g0 : move(g0, p.id, pos),
         sp = sim.pieces.find((u) => u.id === p.id)!;
       const ts = targets(sim, sp);
-      let score = -Math.min(...allies.map((u) => distance(sp, u))) * 0.3;
-      if (p.kind === "king")
-        score -=
-          Math.max(0, 4 - Math.min(...allies.map((u) => distance(sp, u)))) * 2;
+      let score = -(approach.get(coord(sp)) ?? 64) * 0.3;
       let target: string | undefined;
       for (const t of ts) {
         const dmg = previewDamage(sim, sp, t);
         const s =
           dmg * 2 +
           (dmg >= t.hp ? PIECES[t.kind].value * 1.5 + 7 : 0) +
-          (t.kind === "king" ? 3 : 0);
+          (t.kind === "king" ? (dmg >= t.hp ? 50 : 3) : 0);
         if (!target || s > score) {
           score = s;
           target = t.id;
         }
+      }
+      if (p.kind === "king") {
+        // Kings may fight, but avoid trading their life for an ordinary capture.
+        const danger = allies.reduce(
+          (sum, ally) =>
+            sum +
+            (attackSquares(sim, ally, true).some((q) => same(q, sp))
+              ? PIECES[ally.kind].atk
+              : 0),
+          0,
+        );
+        score -= danger * 2;
+        if (g0.pieces.filter((u) => u.side === "enemy").length > 1)
+          score -=
+            Math.max(0, 3 - Math.min(...allies.map((u) => distance(sp, u)))) *
+            2;
       }
       if (ENCOUNTERS[g0.floor].boss && p.kind === "rook") {
         const king = sim.pieces.find(
@@ -919,6 +949,40 @@ export function loadGame(raw: string | null): Game | null {
       )
     )
       return null;
+    if (g.rulesVersion !== 2) {
+      if (
+        g.screen === "battle" &&
+        !g.pieces.some((p) => p.side === "enemy" && p.kind === "king")
+      ) {
+        const encounter = ENCOUNTERS[g.floor];
+        const spawn = encounter.enemies.find(([kind]) => kind === "king")!;
+        const candidates = Array.from({ length: 64 }, (_, i) => ({
+          x: i % 8,
+          y: Math.floor(i / 8),
+        }))
+          .filter((p) => !pieceAt(g, p) && !isHole(g, p))
+          .sort(
+            (a, b) =>
+              distance(a, { x: spawn[1], y: spawn[2] }) -
+              distance(b, { x: spawn[1], y: spawn[2] }),
+          );
+        const pos = candidates[0];
+        if (!pos) return null;
+        g.pieces.push(
+          makePiece(
+            "king",
+            "enemy",
+            pos.x,
+            pos.y,
+            "enemy-king-v2",
+            encounter.kingHp,
+          ),
+        );
+        log(g, "Updated objective: capture the enemy king.");
+      }
+      delete g.undo;
+      g.rulesVersion = 2;
+    }
     return g;
   } catch {
     return null;
