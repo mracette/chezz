@@ -398,6 +398,25 @@ export const STARTERS: [Kind, number, number][] = [
   ["knight", 6, 5],
   ["pawn", 3, 5],
 ];
+// A deliberately familiar first position for the Academy Board experiment.
+// It is a six-piece "mini opening," not a full orthodox chess setup: it gives
+// each chess movement pattern room to be read before tactics rules arrive.
+export const ACADEMY_STARTERS: [Kind, number, number][] = [
+  ["king", 4, 7],
+  ["queen", 3, 7],
+  ["rook", 0, 7],
+  ["bishop", 2, 7],
+  ["knight", 1, 7],
+  ["pawn", 3, 6],
+];
+export const ACADEMY_ENEMIES: EnemySpawn[] = [
+  ["king", 4, 0],
+  ["queen", 3, 0],
+  ["rook", 7, 0],
+  ["bishop", 5, 0],
+  ["knight", 6, 0],
+  ["pawn", 3, 1],
+];
 export const SETS = [
   {
     id: "mahogany",
@@ -417,6 +436,16 @@ export const SETS = [
     detail: "King: 13 health · 40 gold · First Light",
     hp: 13,
     gold: 40,
+    gambit: "momentum",
+  },
+  {
+    id: "academy",
+    name: "Academy Board",
+    subtitle: "CLASSICAL OPENING",
+    desc: "Begin with a one-hit-point, one-piece-per-turn chess opening.",
+    detail: "Battle 1: classic movement · then tactics · 30 gold",
+    hp: 1,
+    gold: 30,
     gambit: "momentum",
   },
 ] as const;

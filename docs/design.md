@@ -33,3 +33,31 @@ Hyperdimensional cosmic limbo: a clear board in impossible space, sculpted ivory
 ## Validation approach
 
 Tests cover significant rules and interactions, seeded progression, and full-floor runs with both sets. Browser tests use actual board inputs, movement, attacks, shops, events, consumables, and saves. Simulation is evidence of playability, not proof of human fun or a substitute for player feedback.
+
+## Familiar opening experiment
+
+The **Academy Board** is an isolated onboarding experiment. Its first battle is
+a six-piece mini opening: pieces have orthodox chess movement, one piece acts
+per side per turn, and all pieces have one health. A capture moves onto the
+captured square and is decisive. It intentionally omits check, castling, and
+en passant; the goal is recognition, not chess simulation.
+
+Winning graduates the run into the normal health-bar tactics rules and restores
+the king to its tactics health pool. This is the proposed pacing: **familiar
+language → one clearly announced rule break → build-driven exceptions**. The
+first opening should answer “how does this piece move?” before asking “what
+does this build let it do?”
+
+Playtest questions:
+
+- Can a chess player predict every highlighted square before clicking?
+- Do players understand that their next battle changes to move-then-attack,
+  whole-army tactics without reading the help screen?
+- Does the board choice feel like a meaningful run identity, or merely a
+  tutorial toggle?
+
+If the transition feels too abrupt, test one of two next variants: keep
+classical movement while adding health bars, or unlock one movement mutation at
+the first shop rather than changing every piece at once. Avoid a hybrid radius
+system in the opening: it has the highest explanation cost and provides the
+least useful chess intuition.

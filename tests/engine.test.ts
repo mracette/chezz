@@ -38,6 +38,32 @@ function arena(): Game {
   return g;
 }
 describe("activation and geometry", () => {
+  it("Academy Board begins with familiar chess geometry and alternating turns", () => {
+    const g = newGame("ACADEMY", "academy");
+    const queen = g.pieces.find((p) => p.side === "player" && p.kind === "queen")!;
+    const pawn = g.pieces.find((p) => p.side === "player" && p.kind === "pawn")!;
+    expect(queen.hp).toBe(1);
+    // Queen's own pawn blocks d-file, while the open e2 diagonal is legal.
+    expect(moves(g, queen)).toContainEqual({ x: 4, y: 6 });
+    expect(moves(g, queen)).not.toContainEqual({ x: 3, y: 6 });
+    expect(moves(g, pawn)).toContainEqual({ x: 3, y: 4 });
+    const next = move(g, pawn.id, { x: 3, y: 4 });
+    expect(next.turn).toBe("enemy");
+    expect(next.pieces.filter((p) => p.side === "player" && !p.acted)).toHaveLength(0);
+  });
+  it("Academy captures move onto the captured square and end the turn", () => {
+    const g = newGame("ACADEMY", "academy");
+    g.pieces = [
+      makePiece("king", "player", 4, 7, "king", 1),
+      makePiece("rook", "player", 0, 7, "rook", 1),
+      makePiece("pawn", "enemy", 0, 4, "target", 1),
+      makePiece("king", "enemy", 4, 0, "enemy-king", 1),
+    ];
+    const next = attack(g, "rook", "target");
+    expect(next.pieces.find((p) => p.id === "target")).toBeUndefined();
+    expect(next.pieces.find((p) => p.id === "rook")).toMatchObject({ x: 0, y: 4 });
+    expect(next.turn).toBe("enemy");
+  });
   it("finds an attack route around a wall instead of waiting behind it", () => {
     const g = arena();
     g.pieces = [

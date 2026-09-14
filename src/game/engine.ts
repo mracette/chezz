@@ -2,6 +2,8 @@ import {
   PIECES,
   ENCOUNTERS,
   STARTERS,
+  ACADEMY_STARTERS,
+  ACADEMY_ENEMIES,
   SETS,
   GAMBITS,
   UPGRADES,
@@ -81,6 +83,9 @@ export const pieceAt = (g: Game, p: Pos) => g.pieces.find((u) => same(u, p));
 export const isHole = (g: Game, p: Pos) => g.holes.some((h) => same(h, p));
 export const has = (g: Game, id: string) =>
   (g.gambits as string[]).includes(id);
+/** The Academy Board uses orthodox piece geometry only in its first battle. */
+export const isClassicalOpening = (g: Game) =>
+  g.set === "academy" && g.floor === 0;
 export const upgraded = (g: Game, p: Piece) =>
   p.side === "player" &&
   UPGRADES.some(
@@ -174,7 +179,11 @@ export function newGame(seed = "BETWEEN-WORLDS", set = "mahogany"): Game {
 }
 function startBattle(g: Game) {
   const e = ENCOUNTERS[g.floor];
-  g.pieces = STARTERS.map(([k, x, y], i) => {
+  const classical = isClassicalOpening(g);
+  const starters = classical ? ACADEMY_STARTERS : STARTERS;
+  const enemies = classical ? ACADEMY_ENEMIES : e.enemies;
+  g.pieces = starters.map(([k, x, y], i) => {
+    if (classical) return makePiece(k, "player", x, y, "p" + i, 1);
     let hp = k === "king" ? g.kingMax : PIECES[k].hp;
     if (k === "queen" && has(g, "queens-gambit")) hp += 4;
     if (k === "pawn" && g.upgrades.includes("ascension")) hp += 2;
@@ -182,7 +191,7 @@ function startBattle(g: Game) {
     if (k === "king") p.hp = g.kingHp;
     return p;
   });
-  e.enemies.forEach(([k, x, y], i) =>
+  enemies.forEach(([k, x, y], i) =>
     g.pieces.push(
       makePiece(
         k,
@@ -190,11 +199,11 @@ function startBattle(g: Game) {
         x,
         y,
         "e" + i,
-        k === "king" ? e.kingHp : PIECES[k].hp + (e.boss ? 1 : 0),
+        classical ? 1 : k === "king" ? e.kingHp : PIECES[k].hp + (e.boss ? 1 : 0),
       ),
     ),
   );
-  g.holes = structuredClone(e.holes);
+  g.holes = classical ? [] : structuredClone(e.holes);
   g.trap = null;
   g.round = 1;
   g.turn = "player";
@@ -209,11 +218,17 @@ function startBattle(g: Game) {
   g.screen = "battle";
   g.log = [];
   g.bought = [];
-  log(g, e.description);
+  log(
+    g,
+    classical
+      ? "Academy opening: normal chess movement. One piece moves each turn; every capture is decisive."
+      : e.description,
+  );
   record(g, "Battle " + (g.floor + 1));
 }
 export function moves(g: Game, p: Piece): Pos[] {
   if (p.moved || p.acted) return [];
+  if (isClassicalOpening(g)) return classicalMoves(g, p);
   const range = PIECES[p.kind].move;
   if (p.kind === "knight") {
     const out: Pos[] = [];
@@ -251,6 +266,36 @@ export function moves(g: Game, p: Piece): Pos[] {
   }
   return out;
 }
+function classicalMoves(g: Game, p: Piece): Pos[] {
+  const out: Pos[] = [];
+  const add = (q: Pos) => {
+    if (inside(q) && !isHole(g, q) && !pieceAt(g, q)) out.push(q);
+  };
+  const ray = (dx: number, dy: number) => {
+    for (let d = 1; d < 8; d++) {
+      const q = { x: p.x + dx * d, y: p.y + dy * d };
+      if (!inside(q) || isHole(g, q) || pieceAt(g, q)) break;
+      out.push(q);
+    }
+  };
+  if (p.kind === "pawn") {
+    const forward = p.side === "player" ? -1 : 1;
+    add({ x: p.x, y: p.y + forward });
+    const home = p.side === "player" ? 6 : 1;
+    const middle = { x: p.x, y: p.y + forward };
+    if (p.y === home && !pieceAt(g, middle) && !isHole(g, middle))
+      add({ x: p.x, y: p.y + forward * 2 });
+  } else if (p.kind === "knight") {
+    for (const [dx, dy] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]])
+      add({ x: p.x + dx, y: p.y + dy });
+  } else if (p.kind === "king") {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) add({ x: p.x + dx, y: p.y + dy });
+  } else {
+    const dirs = p.kind === "rook" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : p.kind === "bishop" ? [[1, 1], [1, -1], [-1, 1], [-1, -1]] : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (const [dx, dy] of dirs) ray(dx, dy);
+  }
+  return out;
+}
 export function movementPath(g: Game, p: Piece, to: Pos): Pos[] {
   if (!moves(g, p).some((q) => same(q, to))) return [];
   if (p.kind === "knight") return [{ x: p.x, y: p.y }, to];
@@ -284,6 +329,7 @@ export function movementPath(g: Game, p: Piece, to: Pos): Pos[] {
 }
 export function attackSquares(g: Game, p: Piece, ignoreActed = false): Pos[] {
   if (p.acted && !ignoreActed) return [];
+  if (isClassicalOpening(g)) return classicalAttackSquares(g, p);
   const dirs =
     p.kind === "bishop"
       ? [
@@ -318,6 +364,30 @@ export function attackSquares(g: Game, p: Piece, ignoreActed = false): Pos[] {
       out.push(q);
       if (u) break;
     }
+  return out;
+}
+function classicalAttackSquares(g: Game, p: Piece): Pos[] {
+  const out: Pos[] = [];
+  const add = (q: Pos) => { if (inside(q) && !isHole(g, q)) out.push(q); };
+  const ray = (dx: number, dy: number) => {
+    for (let d = 1; d < 8; d++) {
+      const q = { x: p.x + dx * d, y: p.y + dy * d };
+      if (!inside(q) || isHole(g, q)) break;
+      out.push(q);
+      if (pieceAt(g, q)) break;
+    }
+  };
+  if (p.kind === "pawn") {
+    const dy = p.side === "player" ? -1 : 1;
+    add({ x: p.x - 1, y: p.y + dy }); add({ x: p.x + 1, y: p.y + dy });
+  } else if (p.kind === "knight") {
+    for (const [dx, dy] of [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]]) add({ x: p.x + dx, y: p.y + dy });
+  } else if (p.kind === "king") {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) add({ x: p.x + dx, y: p.y + dy });
+  } else {
+    const dirs = p.kind === "rook" ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : p.kind === "bishop" ? [[1, 1], [1, -1], [-1, 1], [-1, -1]] : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (const [dx, dy] of dirs) ray(dx, dy);
+  }
   return out;
 }
 export function targets(g: Game, p: Piece) {
@@ -559,6 +629,7 @@ export function move(g0: Game, id: string, to: Pos): Game {
   triggerTrap(g, p);
   log(g, PIECES[p.kind].name + " moves to " + coord(p));
   record(g, id + " move " + coord(to));
+  if (isClassicalOpening(g) && p.side === "player") return endPhase(g);
   return g;
 }
 export function undoMove(g0: Game): Game {
@@ -593,12 +664,20 @@ export function attack(g0: Game, id: string, targetId: string): Game {
     !targets(g, p).some((q) => q.id === targetId)
   )
     return g0;
-  const list = victims(g, p, t).map((u) => ({ u, raw: power(g, p, u) }));
+  const classical = isClassicalOpening(g);
+  const captureSquare = { x: t.x, y: t.y };
+  const list = classical
+    ? [{ u: t, raw: t.hp }]
+    : victims(g, p, t).map((u) => ({ u, raw: power(g, p, u) }));
   if (p.side === "player") {
     g.firstAttack = false;
     g.blood = 0;
   }
   for (const { u, raw } of list) hit(g, p, u, raw);
+  if (classical && !g.pieces.some((u) => u.id === t.id)) {
+    p.x = captureSquare.x;
+    p.y = captureSquare.y;
+  }
   if (p.kind === "knight" && p.side === "player" && g.upgrades.includes("fork"))
     for (const u of [...g.pieces])
       if (u.side !== p.side && u.id !== t.id && distance(p, u) === 1)
@@ -618,6 +697,7 @@ export function attack(g0: Game, id: string, targetId: string): Game {
   delete g.undo;
   record(g, id + " attack " + targetId);
   terminal(g);
+  if (classical && g.screen === "battle" && p.side === "player") return endPhase(g);
   return g;
 }
 export function waitPiece(g0: Game, id: string): Game {
@@ -813,6 +893,16 @@ export function enemyStep(g0: Game): Game {
   if (!same(p, best.pos)) g = move(g, p.id, best.pos);
   if (best.target) g = attack(g, p.id, best.target);
   else g = waitPiece(g, p.id);
+  // The opening is intentionally alternating single-piece chess. The normal
+  // tactics game continues to activate the full enemy army.
+  if (isClassicalOpening(g) && g.screen === "battle" && g.turn === "enemy") {
+    for (const unit of g.pieces)
+      if (unit.side === "enemy") {
+        unit.moved = true;
+        unit.acted = true;
+      }
+    return endEnemyPhase(g);
+  }
   return g;
 }
 export function openShop(g0: Game): Game {
@@ -883,6 +973,11 @@ export function continueRun(g0: Game): Game {
     return g;
   }
   g.floor++;
+  if (g.set === "academy" && g.floor === 1) {
+    g.kingMax = PIECES.king.hp;
+    g.kingHp = PIECES.king.hp;
+    log(g, "Academy complete. Your king gains a tactics health bar.");
+  }
   startBattle(g);
   return g;
 }

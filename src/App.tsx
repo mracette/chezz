@@ -43,6 +43,7 @@ import {
   continueRun,
   chooseEvent,
   upgraded,
+  isClassicalOpening,
 } from "./game/engine";
 import type { Game } from "./game/engine";
 import { playSound } from "./sound";
@@ -162,6 +163,7 @@ export default function App() {
   const debugAvailable =
     import.meta.env.DEV || new URLSearchParams(location.search).has("lab");
   const encounter = ENCOUNTERS[game.floor];
+  const classicalOpening = isClassicalOpening(game);
   const enemyKing = game.pieces.find(
     (p) => p.side === "enemy" && p.kind === "king",
   );
@@ -637,7 +639,9 @@ export default function App() {
                     : chosen?.acted
                       ? "ACTIVATION COMPLETE"
                       : chosen?.side === "player"
-                        ? "MOVE, THEN ATTACK OR USE YOUR ABILITY"
+                        ? classicalOpening
+                          ? "CLASSICAL OPENING · MOVE ONE PIECE"
+                          : "MOVE, THEN ATTACK OR USE YOUR ABILITY"
                         : "YOUR PHASE · SELECT A PIECE"}
             </span>
             <span className="caption-right">
@@ -662,7 +666,9 @@ export default function App() {
                 ? `${PIECES[hovering.kind].name} · move + attack range`
                 : threats
                   ? "Red = danger · brighter = more enemies"
-                  : "Each piece moves, then attacks. You choose the order."}
+                  : classicalOpening
+                    ? "Classic movement · one piece each turn · captures are decisive"
+                    : "Each piece moves, then attacks. You choose the order."}
             </span>
           </div>
         </section>
@@ -671,13 +677,15 @@ export default function App() {
             <div className="eyebrow">
               YOUR OBJECTIVE <span>◇</span>
             </div>
-            <h2>Capture the king.</h2>
+            <h2>{classicalOpening ? "Capture the king in one move." : "Capture the king."}</h2>
             <p>
               {encounter.boss
                 ? bossGuarded
                   ? "Guarded: adjacent allies reduce damage by 2."
                   : "Exposed: the king has no adjacent guards."
-                : "Reduce the enemy king’s HP to zero. Keep yours alive."}
+                : classicalOpening
+                  ? "This opening uses normal chess movement. Every piece has 1 HP; captures are immediate."
+                  : "Reduce the enemy king’s HP to zero. Keep yours alive."}
             </p>
             <div className="material-count boss-count">
               ♚ <strong>{enemyKing?.hp ?? 0}</strong>
@@ -756,13 +764,15 @@ export default function App() {
                     <span>BASE ATK</span>
                   </div>
                   <div>
-                    <b>{PIECES[inspected.kind].move}</b>
-                    <span>MOVE</span>
+                    <b>{classicalOpening ? "♞" : PIECES[inspected.kind].move}</b>
+                    <span>{classicalOpening ? "CLASSIC" : "MOVE"}</span>
                   </div>
                 </div>
                 <p className="piece-rule">
                   {inspected.kind === "king" && inspected.side === "enemy"
                     ? "Capture this king to win. Its adjacent allies take 1 less damage."
+                  : classicalOpening
+                    ? "Moves and captures as in chess. No check, castling, or en passant in this opening."
                     : PIECES[inspected.kind].rule}
                 </p>
                 {inspected.ward > 0 && (
@@ -847,7 +857,7 @@ export default function App() {
                 {chosen?.side === "player" && !chosen.acted ? "E" : "SPACE"}
               </kbd>
             </button>
-            <p>All ready pieces may act before you end.</p>
+            <p>{classicalOpening ? "Move or capture with one piece; the turn passes immediately." : "All ready pieces may act before you end."}</p>
           </div>
         </aside>
         <section className="build-tray" aria-label="Your build">
@@ -962,7 +972,7 @@ export default function App() {
                 onClick={() => setSet(s.id)}
               >
                 <span className="set-symbol">
-                  {s.id === "mahogany" ? "♚" : "♞"}
+                  {s.id === "mahogany" ? "♚" : s.id === "speed" ? "♞" : "♟"}
                 </span>
                 <div>
                   <small>{s.subtitle}</small>
@@ -1229,12 +1239,11 @@ export default function App() {
           <div className="help-steps">
             <div>
               <b>01</b>
-              <h3>Move your whole army.</h3>
+              <h3>{classicalOpening ? "Play a familiar opening." : "Move your whole army."}</h3>
               <p>
-                Each piece may move, then attack once. Click a friendly piece, a
-                cyan movement square, then a red enemy target. Finish its
-                activation before moving another piece. You can attack without
-                moving.
+                {classicalOpening
+                  ? "On the Academy Board’s first battle, pieces use their normal chess movement. Move or capture with one piece, then the enemy takes one move. Every piece has 1 health. There is no check, castling, or en passant."
+                  : "Each piece may move, then attack once. Click a friendly piece, a cyan movement square, then a red enemy target. Finish its activation before moving another piece. You can attack without moving."}
               </p>
             </div>
             <div>
