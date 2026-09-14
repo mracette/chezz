@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import type { Game, Piece } from "../game/engine";
+import type { Game, Piece, DangerSquare } from "../game/engine";
 import {
   attackSquares,
   coord,
@@ -14,6 +14,7 @@ import {
 } from "../game/engine";
 import { PIECES } from "../game/content";
 import type { Pos } from "../game/content";
+import type { Forecast } from "../components/AttackPreview";
 
 type Props = {
   game: Game;
@@ -25,10 +26,16 @@ type Props = {
   reduced: boolean;
   tool: string | null;
   trapFirst: Pos | null;
+  forecast: Forecast[];
+  danger: DangerSquare[];
+  dangerFocus: string | null;
 };
 const IVORY = 0xe6e0cd,
-  MINT = 0x8ef2dd,
-  CORAL = 0xff856e;
+  MINT = 0x00d9ff,
+  CORAL = 0xff3b45,
+  READY = 0x4dff88,
+  MOVED = 0xffbd32,
+  DONE = 0x526378;
 function mesh(
   geo: THREE.BufferGeometry,
   mat: THREE.Material,
@@ -80,7 +87,10 @@ function makePiece(p: Piece, isUpgraded: boolean) {
     metalness: 0.7,
     roughness: 0.27,
   });
-  const glow = new THREE.MeshBasicMaterial({ color: pale ? MINT : CORAL });
+  const glow = new THREE.MeshBasicMaterial({
+    color: pale ? READY : CORAL,
+    toneMapped: false,
+  });
   const dark = new THREE.MeshStandardMaterial({
     color: 0x14212b,
     roughness: 0.8,
@@ -213,11 +223,12 @@ function makePiece(p: Piece, isUpgraded: boolean) {
     ring(group, accent, 0.31, 0.011, 1.38);
   }
   ring(group, glow, 0.285, 0.009, 0.16);
+  if (pale) ring(group, glow, 0.36, 0.028, 0.04);
   if (isUpgraded && p.kind !== "bishop" && p.kind !== "rook")
     ring(group, glow, 0.32, 0.012, 0.43);
   const canvas = document.createElement("canvas");
   canvas.width = 128;
-  canvas.height = 32;
+  canvas.height = 64;
   const texture = new THREE.CanvasTexture(canvas);
   const bar = new THREE.Sprite(
     new THREE.SpriteMaterial({
@@ -226,7 +237,7 @@ function makePiece(p: Piece, isUpgraded: boolean) {
       transparent: true,
     }),
   );
-  bar.scale.set(0.6, 0.15, 1);
+  bar.scale.set(0.7, 0.35, 1);
   bar.position.set(
     0,
     p.kind === "pawn"
@@ -249,22 +260,41 @@ function makePiece(p: Piece, isUpgraded: boolean) {
     bar,
     body,
     accent,
+    glow,
     piece: p,
     upgraded: isUpgraded,
   };
   return group;
 }
-function health(group: THREE.Group, p: Piece, selected: boolean) {
+function health(group: THREE.Group, p: Piece, selected: boolean, after = p.hp) {
   const { canvas, texture } = group.userData;
   const c = canvas.getContext("2d") as CanvasRenderingContext2D;
-  c.clearRect(0, 0, 128, 32);
+  c.clearRect(0, 0, 128, 64);
   c.fillStyle = "#070d14";
   c.fillRect(3, 8, 122, 14);
   c.strokeStyle = selected ? "#f2ddae" : "#57646a";
   c.lineWidth = 2;
   c.strokeRect(3, 8, 122, 14);
-  c.fillStyle = p.side === "player" ? "#8bd8c7" : "#e28073";
+  const status = p.acted ? "#8291a6" : p.moved ? "#ffbd32" : "#4dff88";
+  c.fillStyle = p.side === "player" ? status : "#ff6269";
   c.fillRect(6, 11, 116 * Math.max(0, p.hp / p.maxHp), 8);
+  if (after < p.hp) {
+    const start = 6 + (116 * after) / p.maxHp;
+    const width = (116 * (p.hp - after)) / p.maxHp;
+    c.fillStyle = "#fff0cf";
+    c.fillRect(start, 11, width, 8);
+    c.fillStyle = "#ff3b45";
+    for (let x = start; x < start + width; x += 8)
+      c.fillRect(x, 11, Math.min(3, start + width - x), 8);
+  }
+  if (p.side === "player") {
+    c.fillStyle = "#070d14";
+    c.fillRect(15, 28, 98, 27);
+    c.fillStyle = status;
+    c.font = "bold 21px monospace";
+    c.textAlign = "center";
+    c.fillText(p.acted ? "✓ DONE" : p.moved ? "MOVED" : "READY", 64, 49);
+  }
   texture.needsUpdate = true;
 }
 function disposeObject(o: THREE.Object3D) {
@@ -506,6 +536,8 @@ export default function Board(props: Props) {
     };
     const onLeave = () => {
       hoverKey = "";
+      if (document.activeElement?.closest('[aria-label="Board squares"]'))
+        return;
       latest.current.onHover(null);
     };
     renderer.domElement.addEventListener("pointerup", onClick);
@@ -591,34 +623,64 @@ export default function Board(props: Props) {
             scene.add(obj);
           }
           obj.userData.piece = p;
-          health(obj, p, selected === p.id);
+          health(
+            obj,
+            p,
+            selected === p.id,
+            latest.current.forecast.find((f) => f.piece.id === p.id)?.after,
+          );
           (obj.userData.body as THREE.MeshStandardMaterial).emissive.setHex(
-            selected === p.id ? (p.side === "player" ? 0x154037 : 0x421c1c) : 0,
+            p.side === "player"
+              ? p.acted
+                ? 0
+                : p.moved
+                  ? 0x493000
+                  : 0x06351a
+              : selected === p.id
+                ? 0x421c1c
+                : 0,
           );
           (obj.userData.body as THREE.MeshStandardMaterial).color.setHex(
             p.side === "player"
-              ? p.acted && g.turn === "player"
-                ? 0x8e998f
-                : IVORY
+              ? p.acted
+                ? 0x435268
+                : p.moved
+                  ? 0xffce70
+                  : IVORY
               : 0x382a35,
           );
+          if (p.side === "player") {
+            (obj.userData.glow as THREE.MeshBasicMaterial).color.setHex(
+              p.acted ? DONE : p.moved ? MOVED : READY,
+            );
+            (obj.userData.accent as THREE.MeshStandardMaterial).color.setHex(
+              p.acted ? DONE : p.moved ? MOVED : 0xa6c9bd,
+            );
+          }
         }
         highlightGroup.children.forEach(disposeObject);
         highlightGroup.clear();
-        const mark = (pos: Pos, color: number, fill = false) => {
+        const mark = (
+          pos: Pos,
+          color: number,
+          fill = false,
+          opacity = 0.55,
+          borderOpacity = 0.8,
+        ) => {
           if (fill) {
             const q = mesh(
               new THREE.PlaneGeometry(0.89, 0.89),
               new THREE.MeshBasicMaterial({
                 color,
                 transparent: true,
-                opacity: 0.16,
+                opacity,
+                toneMapped: false,
                 depthWrite: false,
                 side: THREE.DoubleSide,
               }),
               highlightGroup,
               pos.x - 3.5,
-              0.006,
+              0.02,
               pos.y - 3.5,
             );
             q.rotation.x = -Math.PI / 2;
@@ -638,25 +700,90 @@ export default function Board(props: Props) {
             new THREE.LineBasicMaterial({
               color,
               transparent: true,
-              opacity: 0.8,
+              opacity: borderOpacity,
+              toneMapped: false,
             }),
           );
           highlightGroup.add(line);
         };
         const selectedPiece = g.pieces.find((p) => p.id === selected);
-        if (threats)
-          for (const p of g.pieces.filter((p) => p.side === "enemy"))
-            for (const q of attackSquares(g, p, true)) mark(q, 0xbf6662, true);
+        const reachable = new Set(
+          selectedPiece?.side === "player"
+            ? moves(g, selectedPiece).map(coord)
+            : [],
+        );
+        if (latest.current.danger.length) {
+          for (const q of latest.current.danger) {
+            const focused = latest.current.dangerFocus;
+            const muted = !!focused && !q.attackers.includes(focused);
+            const intensity = muted
+              ? 0.08
+              : focused
+                ? 0.65
+                : Math.min(0.8, 0.28 + 0.13 * q.attackers.length);
+            mark(
+              q,
+              CORAL,
+              !reachable.has(coord(q)) &&
+                !same(q, selectedPiece ?? { x: -1, y: -1 }),
+              intensity,
+              muted ? 0.15 : 0.8,
+            );
+            // Keep a solid red border visible on cyan movement squares.
+            for (const [x, z, w, h] of [
+              [0, -0.46, 0.96, 0.045],
+              [0, 0.46, 0.96, 0.045],
+              [-0.46, 0, 0.045, 0.96],
+              [0.46, 0, 0.045, 0.96],
+            ]) {
+              const edge = mesh(
+                new THREE.PlaneGeometry(w, h),
+                new THREE.MeshBasicMaterial({
+                  color: CORAL,
+                  transparent: true,
+                  opacity: muted ? 0.15 : Math.min(1, intensity + 0.3),
+                  side: THREE.DoubleSide,
+                  toneMapped: false,
+                }),
+                highlightGroup,
+                q.x - 3.5 + x,
+                0.03,
+                q.y - 3.5 + z,
+              );
+              edge.rotation.x = -Math.PI / 2;
+              edge.castShadow = false;
+              edge.receiveShadow = false;
+            }
+          }
+        }
         if (selectedPiece) {
           mark(selectedPiece, 0xe9d4a4, true);
-          if (selectedPiece.side === g.turn && g.screen === "battle") {
+          if (
+            selectedPiece.side === "player" &&
+            g.turn === "player" &&
+            g.screen === "battle"
+          ) {
             for (const p of moves(g, selectedPiece)) mark(p, MINT, true);
             for (const p of attackSquares(g, selectedPiece))
-              if (pieceAt(g, p)?.side !== selectedPiece.side)
-                mark(p, CORAL, true);
-          } else if (selectedPiece.side === "enemy")
-            for (const p of attackSquares(g, selectedPiece, true))
-              mark(p, CORAL, true);
+              if (pieceAt(g, p)?.side === "enemy") {
+                mark(p, CORAL, true, 0.75);
+                const target = mesh(
+                  new THREE.RingGeometry(0.29, 0.34, 4),
+                  new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    side: THREE.DoubleSide,
+                    toneMapped: false,
+                  }),
+                  highlightGroup,
+                  p.x - 3.5,
+                  0.035,
+                  p.y - 3.5,
+                );
+                target.rotation.x = -Math.PI / 2;
+                target.castShadow = false;
+                target.receiveShadow = false;
+              }
+          }
           if (hover && selectedPiece.side === "player" && g.turn === "player") {
             const path = movementPath(g, selectedPiece, hover);
             if (path.length) {
@@ -859,6 +986,15 @@ export default function Board(props: Props) {
                     : " empty")
               }
               onClick={() => props.onSquare(p)}
+              aria-description={
+                props.danger.some((q) => same(q, p))
+                  ? `Danger: ${props.danger.find((q) => same(q, p))!.attackers.length} enemies can attack this square after moving`
+                  : undefined
+              }
+              onFocus={() => props.onHover(p)}
+              onBlur={() => props.onHover(null)}
+              onMouseEnter={fallback ? () => props.onHover(p) : undefined}
+              onMouseLeave={fallback ? () => props.onHover(null) : undefined}
             >
               {unit ? PIECES[unit.kind].symbol : ""}
             </button>

@@ -42,6 +42,12 @@ export type Game = {
   holes: Pos[];
   trap: [Pos, Pos] | null;
   active: string | null;
+  undo?: {
+    pieceId: string;
+    pieces: Piece[];
+    trap: [Pos, Pos] | null;
+    log: string[];
+  };
   gold: number;
   kingHp: number;
   kingMax: number;
@@ -191,6 +197,7 @@ function startBattle(g: Game) {
   g.round = 1;
   g.turn = "player";
   g.active = null;
+  delete g.undo;
   g.material = 0;
   g.lost = [];
   g.kills = [];
@@ -317,6 +324,38 @@ export function targets(g: Game, p: Piece) {
     (t) => t.side !== p.side && squares.some((s) => same(s, t)),
   );
 }
+export type DangerSquare = Pos & { attackers: string[] };
+export function dangerSquares(g: Game): DangerSquare[] {
+  const danger = new Map<string, DangerSquare>();
+  for (const enemy of g.pieces.filter((p) => p.side === "enemy")) {
+    const ready: Game = {
+      ...g,
+      turn: "enemy",
+      active: null,
+      pieces: g.pieces.map((p) =>
+        p.id === enemy.id ? { ...p, moved: false, acted: false } : p,
+      ),
+    };
+    const unit = ready.pieces.find((p) => p.id === enemy.id)!;
+    const covered = new Set<string>();
+    for (const destination of [unit, ...moves(ready, unit)]) {
+      const simulation = same(destination, unit)
+        ? ready
+        : move(ready, unit.id, destination);
+      const attacker = simulation.pieces.find((p) => p.id === unit.id)!;
+      for (const square of attackSquares(simulation, attacker)) {
+        if (pieceAt(simulation, square)?.side === "enemy") continue;
+        const key = coord(square);
+        if (covered.has(key)) continue;
+        covered.add(key);
+        const entry = danger.get(key) ?? { ...square, attackers: [] };
+        entry.attackers.push(enemy.id);
+        danger.set(key, entry);
+      }
+    }
+  }
+  return [...danger.values()];
+}
 function power(g: Game, p: Piece, t: Piece) {
   let n = PIECES[p.kind].atk;
   if (p.side === "player") {
@@ -377,7 +416,7 @@ function terminal(g: Game) {
   if (!king) {
     g.screen = "defeat";
     g.active = null;
-    log(g, "Your constant is gone. The void closes in.");
+    log(g, "Your king has no health left. Run ended.");
     return true;
   }
   if (
@@ -392,7 +431,7 @@ function terminal(g: Game) {
 function hit(g: Game, p: Piece, t: Piece, raw: number) {
   if (t.veiled) {
     t.veiled = false;
-    log(g, PIECES[t.kind].name + " slips behind the veil.");
+    log(g, PIECES[t.kind].name + " blocks the hit with Veil.");
     return;
   }
   const dmg = Math.max(1, raw - protection(g, t) - t.ward);
@@ -451,7 +490,11 @@ function triggerTrap(g: Game, p: Piece) {
   g.trap = null;
   log(
     g,
-    "Space folds. " + PIECES[p.kind].name + " emerges at " + coord(p) + ".",
+    "Trapdoor triggered. " +
+      PIECES[p.kind].name +
+      " moved to " +
+      coord(p) +
+      ".",
   );
 }
 export function move(g0: Game, id: string, to: Pos): Game {
@@ -465,6 +508,13 @@ export function move(g0: Game, id: string, to: Pos): Game {
     !moves(g, p).some((q) => same(q, to))
   )
     return g0;
+  if (p.side === "player")
+    g.undo = {
+      pieceId: id,
+      pieces: structuredClone(g0.pieces),
+      trap: structuredClone(g0.trap),
+      log: [...g0.log],
+    };
   p.x = to.x;
   p.y = to.y;
   p.moved = true;
@@ -478,6 +528,25 @@ export function move(g0: Game, id: string, to: Pos): Game {
   triggerTrap(g, p);
   log(g, PIECES[p.kind].name + " moves to " + coord(p));
   record(g, id + " move " + coord(to));
+  return g;
+}
+export function undoMove(g0: Game): Game {
+  if (
+    g0.screen !== "battle" ||
+    g0.turn !== "player" ||
+    !g0.undo ||
+    g0.active !== g0.undo.pieceId
+  )
+    return g0;
+  const active = g0.pieces.find((p) => p.id === g0.active);
+  if (!active?.moved || active.acted) return g0;
+  const g = structuredClone(g0);
+  g.pieces = g.undo!.pieces;
+  g.trap = g.undo!.trap;
+  g.log = g.undo!.log;
+  g.active = null;
+  delete g.undo;
+  record(g, "Undo move " + active.id);
   return g;
 }
 export function attack(g0: Game, id: string, targetId: string): Game {
@@ -515,6 +584,7 @@ export function attack(g0: Game, id: string, targetId: string): Game {
   p.acted = true;
   p.moved = true;
   g.active = null;
+  delete g.undo;
   record(g, id + " attack " + targetId);
   terminal(g);
   return g;
@@ -534,6 +604,7 @@ export function waitPiece(g0: Game, id: string): Game {
   p.acted = true;
   p.moved = true;
   g.active = null;
+  delete g.undo;
   record(g, id + " wait");
   return g;
 }
@@ -568,6 +639,7 @@ export function endPhase(g0: Game): Game {
   const g = structuredClone(g0);
   g.active = null;
   g.turn = "enemy";
+  delete g.undo;
   for (const p of g.pieces) {
     if (p.side === "player") {
       p.acted = true;
@@ -577,7 +649,7 @@ export function endPhase(g0: Game): Game {
       p.moved = false;
     }
   }
-  log(g, "The other side awakens.");
+  log(g, "Enemy turn.");
   record(g, "End player phase");
   return g;
 }
@@ -598,12 +670,12 @@ export function endEnemyPhase(g0: Game): Game {
   }
   if (g.round >= e.rounds) {
     g.screen = "defeat";
-    log(g, "Time collapses before the objective is met.");
+    log(g, "Round limit reached. Objective not met.");
     return g;
   }
   if (!g.pieces.some((p) => p.side === "enemy")) {
     g.screen = "defeat";
-    log(g, "No enemy material remains. The bargain cannot be fulfilled.");
+    log(g, "No enemies remain, but the material target was not met.");
     return g;
   }
   g.round++;

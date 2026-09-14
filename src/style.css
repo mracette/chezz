@@ -527,15 +527,17 @@ sup {
   gap: 5px;
 }
 .legend i {
-  width: 5px;
-  height: 5px;
+  width: 9px;
+  height: 9px;
   border: 1px solid;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
 }
 .legend .mint {
-  color: var(--mint);
+  color: #00d9ff;
 }
 .legend .coral {
-  color: var(--coral);
+  color: #ff3b45;
 }
 .legend .gold {
   color: var(--gold);
@@ -812,6 +814,16 @@ sup {
   letter-spacing: 1.4px;
   margin-bottom: 13px;
   color: #8ba399;
+}
+.activation-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.activation-actions .secondary {
+  padding-left: 10px;
+  padding-right: 10px;
+  white-space: nowrap;
 }
 .ready-count span {
   color: var(--mint);
@@ -2180,5 +2192,202 @@ sup {
   .piece-panel {
     min-height: 165px;
     overflow: visible;
+  }
+}
+
+.attack-forecast {
+  border: 1px solid #fa776666;
+  background: #281c25c9;
+  padding: 12px;
+}
+.forecast-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.forecast-heading > div {
+  min-width: 0;
+}
+.forecast-heading .eyebrow {
+  letter-spacing: 0.8px;
+  flex-wrap: wrap;
+}
+.target-portrait {
+  width: 70px;
+  height: 70px;
+  flex: 0 0 70px;
+}
+.forecast-heading h3 {
+  margin: 5px 0;
+  font:
+    23px "Cormorant Garamond",
+    serif;
+  color: #f5ddcc;
+}
+.forecast-heading strong {
+  color: #ffb489;
+  font-size: 12px;
+}
+.forecast-heading .lethal {
+  color: #ff6269;
+}
+.forecast-health {
+  margin-top: 12px;
+}
+.forecast-health > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.forecast-health span {
+  font-size: 8px;
+  color: #d5bdb5;
+}
+.forecast-health b {
+  font-size: 14px;
+  color: #fff0df;
+  white-space: nowrap;
+}
+.forecast-health small {
+  font-size: 10px;
+  color: #ac9994;
+}
+.forecast-bar {
+  height: 15px;
+  background: #080e17;
+  border: 1px solid #83605c;
+  position: relative;
+  overflow: hidden;
+}
+.forecast-bar i {
+  position: absolute;
+  height: 100%;
+  top: 0;
+}
+.forecast-remaining {
+  left: 0;
+  background: #4de48b;
+}
+.forecast-loss {
+  background: #4de48b;
+  animation: forecast-pulse 1s steps(1, end) infinite;
+}
+@keyframes forecast-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.reduced .forecast-loss {
+  animation: none;
+  background: #ffba69;
+}
+@media (prefers-reduced-motion: reduce) {
+  .forecast-loss {
+    animation: none;
+    background: #ffba69;
+  }
+}
+
+/* Let the page grow instead of clipping the inspector or action controls. */
+.game-layout {
+  grid-template-rows: minmax(680px, auto) auto;
+}
+.command-panel {
+  min-width: 0;
+}
+.command-panel > * {
+  flex-shrink: 0;
+}
+.piece-panel {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: visible;
+}
+.attack-forecast {
+  min-width: 0;
+}
+.king-hp {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 22px 12px;
+  padding: 12px 14px;
+  background: #0b1b24eb;
+  border: 1px solid #80c0a34d;
+  flex-shrink: 0;
+}
+.king-hp-label {
+  font-size: 11px;
+  white-space: nowrap;
+  color: #cfe5d9;
+}
+.king-hp-label b {
+  margin-left: 6px;
+  color: #fff;
+}
+.king-hp-track {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  min-width: 40px;
+  background: #050c12;
+  border: 1px solid #3c5d52;
+  overflow: hidden;
+}
+.king-hp-track i {
+  display: block;
+  height: 100%;
+  background: #4de48b;
+  transition: width 0.2s;
+}
+.king-hp > strong {
+  color: #efffee;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.king-hp > strong span {
+  color: #a4bbae;
+  font-size: 12px;
+}
+@media (min-width: 641px) {
+  .journey {
+    min-height: 0;
+  }
+  .log-panel {
+    min-height: 60px;
+    overflow: hidden;
+  }
+}
+@media (max-width: 640px) {
+  .arena {
+    height: auto;
+    min-height: 550px;
+  }
+  .board-wrap {
+    flex: none;
+    height: 350px;
+  }
+  .king-hp {
+    margin: 4px 10px 12px;
+    padding: 10px;
+    gap: 8px;
+  }
+  .command-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .objective-card {
+    grid-row: auto;
+  }
+  .piece-panel {
+    min-height: 0;
+    padding: 0;
   }
 }

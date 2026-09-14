@@ -6,6 +6,8 @@ import {
   attackSquares,
   attack,
   move,
+  undoMove,
+  dangerSquares,
   waitPiece,
   endPhase,
   endEnemyPhase,
@@ -34,6 +36,67 @@ function arena(): Game {
   return g;
 }
 describe("activation and geometry", () => {
+  it("danger includes move-then-attack and counts each enemy only once", () => {
+    const g = arena();
+    g.pieces.push(makePiece("rook", "enemy", 3, 1, "second"));
+    g.pieces.find((p) => p.id === "enemy")!.acted = true;
+    const before = structuredClone(g);
+    const danger = dangerSquares(g);
+    expect(
+      danger.find((p) => same(p, { x: 4, y: 3 }))?.attackers.sort(),
+    ).toEqual(["enemy", "second"]);
+    expect(danger.find((p) => same(p, { x: 6, y: 3 }))).toBeUndefined();
+    expect(g).toEqual(before);
+  });
+  it("danger respects missing squares, knight jumps, and trapdoors", () => {
+    const g = arena();
+    g.holes = Array.from({ length: 8 }, (_, y) => ({ x: 2, y }));
+    expect(dangerSquares(g).some((p) => p.x > 2)).toBe(false);
+    g.pieces.find((p) => p.id === "enemy")!.kind = "knight";
+    expect(dangerSquares(g).some((p) => same(p, { x: 4, y: 3 }))).toBe(true);
+    const trapped = arena();
+    trapped.trap = [
+      { x: 2, y: 3 },
+      { x: 6, y: 1 },
+    ];
+    expect(dangerSquares(trapped).some((p) => same(p, { x: 6, y: 2 }))).toBe(
+      true,
+    );
+  });
+  it("undo restores swaps and movement buffs, including after reload", () => {
+    const g = arena();
+    g.upgrades = ["bulwark"];
+    g.inventory = ["trapdoor"];
+    const before = useConsumable(g, 0, [
+      { x: 2, y: 4 },
+      { x: 1, y: 3 },
+    ]);
+    const moved = move(before, "rook", { x: 2, y: 4 });
+    expect(moved.pieces.find((p) => p.id === "rook")?.ward).toBe(2);
+    expect(moved.trap).toBeNull();
+    const restored = undoMove(loadGame(JSON.stringify(moved))!);
+    expect(restored.pieces).toEqual(before.pieces);
+    expect(restored.trap).toEqual(before.trap);
+    expect(restored.log).toEqual(before.log);
+    expect(restored.inventory).toEqual(before.inventory);
+    expect(restored.consumed).toBe(true);
+    expect(restored.active).toBeNull();
+    expect(restored.serial).toBeGreaterThan(moved.serial);
+    expect(move(restored, "rook", { x: 2, y: 4 }).pieces).toEqual(moved.pieces);
+  });
+  it("attacking, finishing, and ending the phase commit a move", () => {
+    const g = arena();
+    g.pieces[1].x = 2;
+    const moved = move(g, "rook", { x: 1, y: 4 });
+    for (const committed of [
+      attack(moved, "rook", "enemy"),
+      waitPiece(moved, "rook"),
+      endPhase(moved),
+    ]) {
+      expect(committed.undo).toBeUndefined();
+      expect(undoMove(committed)).toBe(committed);
+    }
+  });
   it("a unit can move then attack but cannot act twice", () => {
     let g = arena();
     g.pieces[1].x = 2;

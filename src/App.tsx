@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Board from "./render/Board";
 import { Art } from "./components/Art";
+import { AttackPreview } from "./components/AttackPreview";
 import {
   PIECES,
   ENCOUNTERS,
@@ -23,6 +24,8 @@ import {
   moves,
   targets,
   move,
+  undoMove,
+  dangerSquares,
   attack,
   waitPiece,
   endPhase,
@@ -30,8 +33,6 @@ import {
   pieceAt,
   same,
   coord,
-  previewDamage,
-  victims,
   bonusMet,
   useConsumable,
   openShop,
@@ -156,6 +157,8 @@ export default function App() {
     [toast, setToast] = useState("");
   const [savingError, setSavingError] = useState(false),
     [detail, setDetail] = useState<string | null>(null);
+  const endInputLocked = useRef(false);
+  const [endLocked, setEndLocked] = useState(false);
   const debugAvailable =
     import.meta.env.DEV || new URLSearchParams(location.search).has("lab");
   const encounter = ENCOUNTERS[game.floor];
@@ -163,6 +166,21 @@ export default function App() {
   const hovering = hover ? pieceAt(game, hover) : undefined;
   const inspected = hovering ?? chosen;
   const canAct = game.screen === "battle" && game.turn === "player" && !intro;
+  useEffect(() => {
+    if (!endInputLocked.current) return;
+    if (game.screen !== "battle" || intro) {
+      endInputLocked.current = false;
+      setEndLocked(false);
+      return;
+    }
+    if (game.turn !== "player") return;
+    // Discard input spilling across the enemy phase, including fast turns.
+    const timer = setTimeout(() => {
+      endInputLocked.current = false;
+      setEndLocked(false);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [game.turn, game.round, game.floor, game.screen, intro]);
   const toolId = tool !== null ? game.inventory[tool] : undefined;
   const attackTarget =
     chosen &&
@@ -174,6 +192,29 @@ export default function App() {
   const remaining = game.pieces.filter(
     (p) => p.side === "player" && !p.acted,
   ).length;
+  const allDanger = useMemo(() => dangerSquares(game), [game]);
+  const dangerFocus =
+    hovering?.side === "enemy" && !attackTarget && tool === null && canAct
+      ? hovering.id
+      : null;
+  const danger = threats
+    ? allDanger
+    : dangerFocus
+      ? allDanger
+          .filter((q) => q.attackers.includes(dangerFocus))
+          .map((q) => ({ ...q, attackers: [dangerFocus] }))
+      : [];
+  const forecast = (() => {
+    if (!attackTarget || !chosen || !canAct || tool !== null) return [];
+    const result = attack(game, chosen.id, attackTarget.id);
+    return game.pieces
+      .filter((p) => p.side === "enemy")
+      .map((piece) => ({
+        piece,
+        after: result.pieces.find((p) => p.id === piece.id)?.hp ?? 0,
+      }))
+      .filter((f) => f.piece.id === attackTarget.id || f.after < f.piece.hp);
+  })();
   useEffect(() => {
     try {
       localStorage.setItem(SAVE, JSON.stringify(game));
@@ -231,7 +272,7 @@ export default function App() {
   }
   function square(pos: Pos) {
     if (!canAct) {
-      if (game.turn === "enemy") notify("The other side is taking its turn.");
+      if (game.turn === "enemy") notify("The enemy is taking its turn.");
       return;
     }
     if (tool !== null && toolId) {
@@ -280,6 +321,7 @@ export default function App() {
       const next = attack(game, chosen.id, p.id);
       if (next !== game) {
         setGame(next);
+        setSelected(null);
         playSound("attack", sound);
       }
       return;
@@ -322,7 +364,10 @@ export default function App() {
     }
   }
   function end() {
-    if (!canAct) return;
+    if (!canAct || endInputLocked.current) return;
+    // Lock synchronously: two events can arrive before React renders again.
+    endInputLocked.current = true;
+    setEndLocked(true);
     setGame((g) => endPhase(g));
     setSelected(null);
     setTool(null);
@@ -330,7 +375,11 @@ export default function App() {
     playSound("phase", sound);
   }
   const cancel = () => {
-    if (game.active) setSelected(game.active);
+    if (game.active && game.undo && canAct) {
+      setGame(undoMove(game));
+      setSelected(game.active);
+      setHover(null);
+    } else if (game.active) setSelected(game.active);
     else setSelected(null);
     setTool(null);
     setTrapFirst(null);
@@ -369,15 +418,15 @@ export default function App() {
         return;
       if (e.key === "Escape") cancel();
       if (e.key.toLowerCase() === "t") setThreats((v) => !v);
-      if (e.key.toLowerCase() === "e") end();
-      if (
-        e.key === " " &&
-        chosen &&
-        canAct &&
-        !(e.target instanceof HTMLButtonElement)
-      ) {
+      if (e.key.toLowerCase() === "e") {
         e.preventDefault();
-        finish();
+        if (!e.repeat) end();
+      }
+      if (e.key === " " && canAct && !(e.target instanceof HTMLButtonElement)) {
+        e.preventDefault();
+        if (e.repeat) return;
+        if (chosen?.side === "player" && !chosen.acted) finish();
+        else end();
       }
     };
     window.addEventListener("keydown", key);
@@ -393,11 +442,11 @@ export default function App() {
           onClick={() => setSettings(true)}
           aria-label="Chezz menu"
         >
-          CHEZZ<span>BETWEEN WORLDS</span>
+          CHEZZ
         </button>
         <div className="header-center">
-          <span className="tiny-star">✧</span> A GAME IN THE GAP BETWEEN
-          UNIVERSES <span className="tiny-star">✧</span>
+          <span className="tiny-star">✧</span> TURN-BASED TACTICS{" "}
+          <span className="tiny-star">✧</span>
         </div>
         <div className="header-actions">
           <span className="prototype">
@@ -430,13 +479,9 @@ export default function App() {
       <main className="game-layout">
         <aside className="journey">
           <div className="eyebrow">
-            <span className="diamond">◇</span> THE FIRST DESCENT
+            <span className="diamond">◇</span> FLOOR 01
           </div>
-          <h2>
-            Away from
-            <br />
-            <em>everything.</em>
-          </h2>
+          <h2>Battle progress</h2>
           <div className="floor-track" aria-label="Floor progress">
             {ENCOUNTERS.map((e, i) => (
               <div
@@ -470,7 +515,7 @@ export default function App() {
           </div>
           <div className="run-resources">
             <div>
-              <span className="resource-label">THE CONSTANT</span>
+              <span className="resource-label">KING HEALTH</span>
               <strong>
                 ♚ <span>{game.kingHp}</span>
                 <small> / {game.kingMax}</small>
@@ -488,7 +533,7 @@ export default function App() {
             </div>
           </div>
           <div className="log-panel">
-            <div className="eyebrow">ECHOES</div>
+            <div className="eyebrow">BATTLE LOG</div>
             <div aria-live="polite">
               {game.log.slice(0, 3).map((s, i) => (
                 <p className={i === 0 ? "latest" : ""} key={i}>
@@ -520,8 +565,10 @@ export default function App() {
               className={"threat-toggle " + (threats ? "on" : "")}
               onClick={() => setThreats((t) => !t)}
               aria-pressed={threats}
+              aria-label="Danger squares (T)"
+              title="Show squares enemies can attack after moving (T)"
             >
-              <span>◎</span> THREAT RANGES <kbd>T</kbd>
+              <span>◎</span> DANGER <kbd>T</kbd>
             </button>
           </div>
           <Board
@@ -534,7 +581,32 @@ export default function App() {
             reduced={reduced}
             tool={toolId ?? null}
             trapFirst={trapFirst}
+            forecast={forecast}
+            danger={danger}
+            dangerFocus={dangerFocus}
           />
+          <div className="king-hp" role="group" aria-label="Your king's health">
+            <span className="king-hp-label">
+              ♚ KING <b>HP</b>
+            </span>
+            <div
+              className="king-hp-track"
+              role="progressbar"
+              aria-label="King HP"
+              aria-valuemin={0}
+              aria-valuemax={game.kingMax}
+              aria-valuenow={Math.max(0, game.kingHp)}
+            >
+              <i
+                style={{
+                  width: `${(Math.max(0, game.kingHp) / game.kingMax) * 100}%`,
+                }}
+              />
+            </div>
+            <strong>
+              {Math.max(0, game.kingHp)} <span>/ {game.kingMax}</span>
+            </strong>
+          </div>
           <div className="board-caption">
             <span
               className={
@@ -543,7 +615,7 @@ export default function App() {
             />
             <span>
               {game.turn === "enemy"
-                ? "THE OTHER SIDE IS THINKING"
+                ? "ENEMY TURN"
                 : toolId
                   ? itemById(toolId).name.toUpperCase() +
                     " — SELECT " +
@@ -574,7 +646,11 @@ export default function App() {
               SELECTED
             </span>
             <span className="legend-hint">
-              Each piece moves, then attacks. You choose the order.
+              {dangerFocus && hovering
+                ? `${PIECES[hovering.kind].name} · move + attack range`
+                : threats
+                  ? "Red = danger · brighter = more enemies"
+                  : "Each piece moves, then attacks. You choose the order."}
             </span>
           </div>
         </section>
@@ -585,7 +661,7 @@ export default function App() {
             </div>
             <h2>
               {encounter.boss
-                ? "Unmake the king."
+                ? "Defeat the king."
                 : "Win " + encounter.target + " material."}
             </h2>
             <p>
@@ -644,10 +720,12 @@ export default function App() {
             </div>
           </div>
           <div className="piece-panel">
-            {inspected ? (
+            {forecast.length && attackTarget ? (
+              <AttackPreview forecast={forecast} targetId={attackTarget.id} />
+            ) : inspected ? (
               <>
                 <div className="eyebrow">
-                  {inspected.side === "player" ? "YOUR ARMY" : "THE OTHER SIDE"}{" "}
+                  {inspected.side === "player" ? "YOUR ARMY" : "ENEMY ARMY"}{" "}
                   <span>{coord(inspected).toUpperCase()}</span>
                 </div>
                 <div className="piece-title">
@@ -695,22 +773,6 @@ export default function App() {
                 {inspected.veiled && (
                   <div className="status-pill">◎ VEILED · NEXT HIT IGNORED</div>
                 )}
-                {attackTarget && chosen && (
-                  <div className="damage-preview">
-                    <strong>
-                      {previewDamage(game, chosen, attackTarget)} DAMAGE
-                    </strong>
-                    <span>
-                      {previewDamage(game, chosen, attackTarget) >=
-                      attackTarget.hp
-                        ? "LETHAL"
-                        : "ON CLICK"}
-                      {victims(game, chosen, attackTarget).length > 1
-                        ? " · PIERCING"
-                        : ""}
-                    </span>
-                  </div>
-                )}
                 {upgraded(game, inspected) && (
                   <button
                     className="text-button"
@@ -747,9 +809,16 @@ export default function App() {
                 Cancel consumable <kbd>ESC</kbd>
               </button>
             ) : chosen?.side === "player" && !chosen.acted && canAct ? (
-              <button className="secondary wide" onClick={finish}>
-                Finish activation <kbd>SPACE</kbd>
-              </button>
+              <div className="activation-actions">
+                <button className="secondary wide" onClick={finish}>
+                  Finish activation <kbd>SPACE</kbd>
+                </button>
+                {game.active && game.undo && (
+                  <button className="secondary" onClick={cancel}>
+                    Undo <kbd>ESC</kbd>
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="ready-count">
                 <span>●</span> {remaining} OF{" "}
@@ -759,11 +828,24 @@ export default function App() {
             )}
             <button
               className="primary end-phase"
-              onClick={end}
-              disabled={!canAct}
+              onClick={(e) => {
+                if (e.detail <= 1) end();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === " " || e.key === "Enter") {
+                  e.preventDefault();
+                  if (!e.repeat) end();
+                }
+              }}
+              onKeyUp={(e) => {
+                if (e.key === " " || e.key === "Enter") e.preventDefault();
+              }}
+              disabled={!canAct || endLocked}
             >
               {game.turn === "enemy" ? "Enemy phase…" : "End phase"}
-              <span>↗</span>
+              <kbd>
+                {chosen?.side === "player" && !chosen.acted ? "E" : "SPACE"}
+              </kbd>
             </button>
             <p>All ready pieces may act before you end.</p>
           </div>
@@ -773,9 +855,6 @@ export default function App() {
             <div className="tray-heading">
               <span className="eyebrow">
                 YOUR GAMBITS <small>{game.gambits.length} / 3</small>
-              </span>
-              <span className="tray-poem">
-                Small exceptions to universal laws.
               </span>
             </div>
             <div className="gambit-row">
@@ -801,7 +880,7 @@ export default function App() {
                 ) : (
                   <div className="empty-gambit" key={i}>
                     <span>✧</span>
-                    <small>AN UNWRITTEN LAW</small>
+                    <small>EMPTY GAMBIT SLOT</small>
                   </div>
                 );
               })}
@@ -810,7 +889,7 @@ export default function App() {
           <div className="consumable-section">
             <div className="tray-heading">
               <span className="eyebrow">
-                POCKET DIMENSION <small>{game.inventory.length} / 2</small>
+                CONSUMABLES <small>{game.inventory.length} / 2</small>
               </span>
             </div>
             <div className="consumable-row">
@@ -853,9 +932,7 @@ export default function App() {
       <footer className="footer">
         <span>
           <i />{" "}
-          {savingError
-            ? "SAVE UNAVAILABLE — EXPORT IN SETTINGS"
-            : "SAVED IN THIS REALITY"}
+          {savingError ? "SAVE UNAVAILABLE — EXPORT IN SETTINGS" : "GAME SAVED"}
         </span>
         <button onClick={() => setHelp(true)}>HOW TO PLAY ↗</button>
         {debugAvailable && (
@@ -870,21 +947,13 @@ export default function App() {
       )}
 
       {intro && (
-        <Modal label="Begin your descent" className="intro-modal">
+        <Modal label="New run" className="intro-modal">
           <div className="intro-orbit">
             <Art type="eclipse" />
           </div>
-          <div className="eyebrow">A TACTICS ROGUELIKE BETWEEN WORLDS</div>
-          <h1>
-            Nothing here
-            <br />
-            plays by <em>the rules.</em>
-          </h1>
-          <p className="intro-copy">
-            Build an army. Bend reality.
-            <br />
-            Five encounters. One impossible king.
-          </p>
+          <div className="eyebrow">CHEZZ · NEW RUN</div>
+          <h1>Choose your starting set.</h1>
+          <p className="intro-copy">Five battles and a boss fight.</p>
           <div className="set-selection">
             {SETS.map((s) => (
               <button
@@ -926,7 +995,7 @@ export default function App() {
             </button>
           </div>
           <button className="primary wide begin-button" onClick={start}>
-            Enter the in-between <span>↗</span>
+            Start run <span>↗</span>
           </button>
           <div className="intro-bottom">
             <span>No chess knowledge required.</span>
@@ -938,10 +1007,10 @@ export default function App() {
       )}
       {!intro && game.screen === "reward" && (
         <Modal label="Encounter complete" className="reward-modal">
-          <div className="eyebrow">A LITTLE FURTHER FROM HOME</div>
+          <div className="eyebrow">BATTLE COMPLETE</div>
           <Art type="sun" />
-          <h1>Reality yields.</h1>
-          <p>You conquered {encounter.name}.</p>
+          <h1>Battle won.</h1>
+          <p>You completed {encounter.name}.</p>
           <div className="reward-stats">
             <div>
               <strong>+{game.reward}</strong>
@@ -962,25 +1031,23 @@ export default function App() {
             <p>{encounter.bonus}</p>
           </div>
           <p className="muted">
-            Your army reforms for the next battle.
-            <br />
-            Your king carries the scars.
+            Your other pieces return at full health for the next battle. Your
+            king keeps its current health.
           </p>
           <button
             className="primary wide"
             onClick={() => setGame(openShop(game))}
           >
-            Visit the Interstice <span>↗</span>
+            Visit shop <span>↗</span>
           </button>
         </Modal>
       )}
       {!intro && game.screen === "shop" && (
-        <Modal label="The Interstice shop" className="shop-modal">
+        <Modal label="Shop" className="shop-modal">
           <div className="shop-title">
             <div>
               <div className="eyebrow">BETWEEN ENCOUNTERS</div>
-              <h1>The Interstice</h1>
-              <p>Something useful, salvaged from another possibility.</p>
+              <h1>Shop</h1>
             </div>
             <div className="shop-gold">
               ✦ {game.gold}
@@ -1014,7 +1081,7 @@ export default function App() {
                       playSound("reward", sound);
                     }}
                   >
-                    {reason || "Acquire · " + item.price + " gold"}
+                    {reason || "Buy · " + item.price + " gold"}
                   </button>
                 </article>
               );
@@ -1053,7 +1120,7 @@ export default function App() {
               <p>
                 {game.upgrades.length
                   ? game.upgrades.map((id) => itemById(id).name).join(" · ")
-                  : "Your pieces still hold their original forms."}
+                  : "No upgrades purchased."}
               </p>
             </div>
           </div>
@@ -1066,37 +1133,31 @@ export default function App() {
               className="primary"
               onClick={() => setGame(continueRun(game))}
             >
-              Continue the descent <span>↗</span>
+              Continue <span>↗</span>
             </button>
           </div>
         </Modal>
       )}
       {!intro && game.screen === "event" && (
-        <Modal label="The wishing well" className="event-modal">
-          <div className="eyebrow">AN UNEXPECTED ENCOUNTER</div>
+        <Modal label="Bonus event" className="event-modal">
+          <div className="eyebrow">BONUS EVENT</div>
           <Art type="rings" />
-          <h1>The other you.</h1>
-          <p>
-            A familiar hand reaches through a crack in space.
-            <br />
-            It offers you a choice. It already knows your answer.
-          </p>
+          <h1>Choose a bonus.</h1>
           <div className="event-choices">
             <button
               className="set-card"
               onClick={() => setGame(chooseEvent(game, "heal"))}
             >
-              <h3>Take its hand.</h3>
+              <h3>Heal your king</h3>
               <p>Restore 5 health to your king.</p>
-              <span>“You have further to go.”</span>
             </button>
             <button
               className="set-card"
               onClick={() => setGame(chooseEvent(game, "gold"))}
             >
-              <h3>Take its bargain.</h3>
+              <h3>Trade health for gold</h3>
               <p>Lose up to 3 king health. Gain 20 gold.</p>
-              <span>Your king cannot fall from this choice.</span>
+              <span>Your king will keep at least 1 health.</span>
             </button>
           </div>
         </Modal>
@@ -1107,22 +1168,16 @@ export default function App() {
           className="reward-modal"
         >
           <div className="eyebrow">
-            {game.screen === "victory"
-              ? "THE FIRST FLOOR IS YOURS"
-              : "ANOTHER POSSIBILITY ENDS"}
+            {game.screen === "victory" ? "FLOOR COMPLETE" : "RUN ENDED"}
           </div>
           <Art type={game.screen === "victory" ? "crown" : "fracture"} />
-          <h1>
-            {game.screen === "victory"
-              ? "Beyond the crown."
-              : "Lost between worlds."}
-          </h1>
+          <h1>{game.screen === "victory" ? "Floor complete." : "Run over."}</h1>
           <p>
             {game.screen === "victory"
-              ? "You brought an impossible king to zero. The universe makes a little more room for you."
+              ? "You defeated the Iron Crown and completed all six battles."
               : game.kingHp <= 0
-                ? "Your king has fallen. Somewhere, another version of you is beginning again."
-                : "The encounter ended before you met its objective. A different approach awaits."}
+                ? "Your king ran out of health."
+                : "You did not meet the battle objective."}
           </p>
           <div className="reward-stats">
             <div>
@@ -1150,7 +1205,7 @@ export default function App() {
               setIntro(true);
             }}
           >
-            Begin another possibility <span>↗</span>
+            Start a new run <span>↗</span>
           </button>
           <button
             className="text-button"
@@ -1169,15 +1224,15 @@ export default function App() {
           className="help-modal"
           onClose={() => setHelp(false)}
         >
-          <div className="eyebrow">FAMILIAR PIECES. DIFFERENT RULES.</div>
-          <h1>A little orientation.</h1>
+          <div className="eyebrow">RULES</div>
+          <h1>How to play</h1>
           <div className="help-steps">
             <div>
               <b>01</b>
               <h3>Move your whole army.</h3>
               <p>
                 Each piece may move, then attack once. Click a friendly piece, a
-                mint movement square, then a coral enemy target. Finish its
+                cyan movement square, then a red enemy target. Finish its
                 activation before moving another piece. You can attack without
                 moving.
               </p>
@@ -1224,28 +1279,30 @@ export default function App() {
             ))}
           </div>
           <p className="help-note">
-            Threat ranges show attacks from current enemy positions, not
-            committed intentions. Enemies can move before attacking. Pawn and
-            king protection applies to orthogonally adjacent allies; only the
-            strongest protection applies. Damage is at least 1 unless Veil
-            blocks it.
+            Hover an enemy to see its move-and-attack range. T shows all
+            enemies; hovering one highlights its range. When aiming an attack,
+            the damage preview takes priority. Danger squares show where enemies
+            could attack after moving, based on the current board. Brighter red
+            means more enemies can attack that square. Pawn and king protection
+            applies to orthogonally adjacent allies; only the strongest
+            protection applies. Damage is at least 1 unless Veil blocks it.
           </p>
           <div className="keyboard-help">
             <span>
               <kbd>E</kbd> End phase
             </span>
             <span>
-              <kbd>SPACE</kbd> Finish activation
+              <kbd>SPACE</kbd> Finish selected piece; otherwise end phase
             </span>
             <span>
-              <kbd>T</kbd> Threat ranges
+              <kbd>T</kbd> Danger squares
             </span>
             <span>
-              <kbd>ESC</kbd> Cancel selection
+              <kbd>ESC</kbd> Undo move / cancel selection
             </span>
           </div>
           <button className="primary wide" onClick={() => setHelp(false)}>
-            Find your footing <span>↗</span>
+            Back to game <span>↗</span>
           </button>
         </Modal>
       )}
@@ -1255,7 +1312,6 @@ export default function App() {
           className="settings-modal"
           onClose={() => setSettings(false)}
         >
-          <div className="eyebrow">THIS LITTLE REALITY</div>
           <h1>Make yourself at home.</h1>
           <label className="setting-row">
             <span>Sound effects</span>
@@ -1309,7 +1365,7 @@ export default function App() {
             Start a fresh run
           </button>
           <p className="muted">
-            Your current run is replaced when you enter the in-between.
+            Your current run is replaced when you select Start run.
           </p>
         </Modal>
       )}
@@ -1325,8 +1381,8 @@ export default function App() {
         >
           {detail === "log" ? (
             <>
-              <div className="eyebrow">THE ORDER OF THINGS</div>
-              <h1>Echoes of this battle.</h1>
+              <div className="eyebrow">BATTLE HISTORY</div>
+              <h1>Battle log</h1>
               <div className="full-log">
                 {game.log.map((s, i) => (
                   <p key={i}>
@@ -1344,7 +1400,6 @@ export default function App() {
               <Art type={itemById(detail).art} />
               <h1>{itemById(detail).name}</h1>
               <p>{itemById(detail).desc}</p>
-              <blockquote>{itemById(detail).flavor}</blockquote>
             </>
           )}
         </Modal>

@@ -1,6 +1,6 @@
 # Chezz — Between Worlds
 
-A browser tactics roguelike played in the gap between universes. A complete first-floor prototype: five battles, a boss, shops, an event, two starting sets, gambits, upgrades, consumables, and local save/resume.
+A browser tactics roguelike with chess pieces. A complete first-floor prototype: five battles, a boss, shops, an event, two starting sets, gambits, upgrades, consumables, and local save/resume.
 
 ## Run locally
 
@@ -24,13 +24,13 @@ npm run preview          # Serve the production build
 ## Play
 
 1. Choose a starting set and enter a seed.
-2. Select a friendly piece. Mint squares show movement; coral squares show attacks.
+2. Select a friendly piece. Bright cyan squares show movement; red squares show attackable enemies. Friendly pieces glow green when ready, amber after moving, and turn slate gray when done.
 3. Move, then attack, or attack without moving. A piece's attack ends its activation. Use **Finish activation** to skip its remaining actions.
 4. Activate as many pieces as you wish, then **End phase**. The enemy moves its whole army.
 5. Meet the material target at the end of a full round. Optional objectives add 12 gold.
 6. Shop between encounters. Defeat the Iron Crown by reducing its king to zero health.
 
-Shortcuts: **E** ends the phase, **Space** finishes the selected piece, **T** toggles current enemy attack ranges, **Escape** cancels selection or a consumable. All squares also support keyboard activation.
+Shortcuts: **E** ends the phase. **Space** finishes a selected ready piece, or ends the phase when no ready piece is selected. **T** toggles danger squares, including enemy movement before attacking, **Escape** undoes an uncommitted move (before attacking or finishing), or cancels selection or a consumable. All squares also support keyboard activation.
 
 Movement uses orthogonal paths. Knights jump across blockers. Bishop attacks are diagonal; queens attack straight or diagonally. Other pieces attack orthogonally adjacent squares. There are no automatic counterattacks, check restrictions, castling, or en passant.
 
@@ -54,7 +54,7 @@ The Eternal Set is the mahogany origin (18 king health, 26 gold, Queen's Gambit)
 
 Commands return a new serializable game state. Invalid commands leave the state unchanged. Animation consumes the results; it cannot change damage or turn order. Seeded randomness affects offers. The same seed, build version, and action sequence reproduce a run.
 
-Enemy AI evaluates one activation at a time and responds to the current board. Threat overlays show ranges from current positions, **not** promised next actions. Boss rooks favor staying near their king.
+Enemy AI evaluates one activation at a time and responds to the current board. Danger overlays combine every enemy’s possible move-and-attack range on the current board. Brighter red means more enemies can attack a square; red borders remain visible on cyan movement squares. Hovering an enemy shows its individual range; with T enabled it emphasizes that enemy and dims the others. Aiming at an attackable target keeps the damage preview and existing movement highlights stable. These show possible attacks, not committed enemy actions. Boss rooks favor staying near their king.
 
 ## Iterate
 
@@ -64,13 +64,13 @@ Settings include sound, reduced motion, fast enemy turns, and JSON export. Saves
 
 ## Publish
 
+Play at **[mracette.github.io/chezz](https://mracette.github.io/chezz/)**. The source repository is public.
+
 The GitHub Actions workflow checks rules, builds, and runs browser tests before publishing **dist** to GitHub Pages on pushes to **main**.
 
 In repository **Settings → Pages**, select **GitHub Actions** as the source. Relative asset URLs support the repository subpath, and there is no backend or runtime API key.
 
-After Pages is available, set the repository Actions variable **PAGES_ENABLED** to **true**. Until then, the workflow runs verification and saves the build artifact without attempting publication.
-
-The repository may remain private if the account's GitHub plan supports Pages for private repositories. Website publication and source-repository visibility are separate.
+The repository Actions variable **PAGES_ENABLED** is set to **true** to enable deployment after verification passes.
 
 ## MVP boundaries
 
