@@ -3,7 +3,7 @@ export type Kind = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
 export type Pos = { x: number; y: number };
 export type Unit = Pos & { id: string; side: Side; kind: Kind; hp: number };
 export type Order = { unitId: string; to: Pos };
-export type Game = { units: Unit[]; planned: Order[]; turn: number; log: string[]; winner: Side | null };
+export type Game = { units: Unit[]; planned: Order[]; cleanupTargets: string[]; turn: number; log: string[]; winner: Side | null };
 
 export const HP: Record<Kind, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 5 };
 export const ICON: Record<Side, Record<Kind, string>> = {
@@ -26,7 +26,7 @@ export function newGame(): Game {
   const units: Unit[] = [];
   setup.forEach(([kind, x, y], i) => units.push({ id: `w${i}`, side: "white", kind, x, y, hp: HP[kind] }));
   setup.forEach(([kind, x, y], i) => units.push({ id: `b${i}`, side: "black", kind, x, y: 7 - y, hp: HP[kind] }));
-  return { units, planned: [], turn: 1, log: ["Plan up to three white orders, then resolve simultaneously."], winner: null };
+  return { units, planned: [], cleanupTargets: [], turn: 1, log: ["Plan up to three white orders, then resolve simultaneously."], winner: null };
 }
 
 function rays(g: Game, u: Unit, dirs: number[][]) {
@@ -60,12 +60,30 @@ export function legal(g: Game, u: Unit): Pos[] {
   return rays(g, u, u.kind === "rook" ? orthogonal : u.kind === "bishop" ? diagonal : [...orthogonal, ...diagonal]);
 }
 export function queue(g: Game, order: Order): Game {
-  if (g.winner || g.planned.length >= 3 || g.planned.some(o => o.unitId === order.unitId || same(o.to, order.to))) return g;
+  if (g.winner || g.cleanupTargets.length || g.planned.length >= 3 || g.planned.some(o => o.unitId === order.unitId || same(o.to, order.to))) return g;
   const u = unit(g, order.unitId);
   if (!u || u.side !== "white" || !legal(g, u).some(p => same(p, order.to))) return g;
   return { ...g, planned: [...g.planned, order] };
 }
 export function removeOrder(g: Game, index: number): Game { return { ...g, planned: g.planned.filter((_, i) => i !== index) }; }
+export function declineCleanup(g: Game): Game {
+  return g.cleanupTargets.length ? { ...g, cleanupTargets: [], log: ["You decline the cleanup opportunity.", ...g.log] } : g;
+}
+export function cleanup(g: Game, attackerId: string, targetId: string): Game {
+  if (!g.cleanupTargets.includes(targetId) || g.winner) return g;
+  const attacker = unit(g, attackerId), target = unit(g, targetId);
+  if (!attacker || !target || attacker.side !== "white" || target.side !== "black" || !legal(g, attacker).some(p => same(p, target))) return g;
+  const units = g.units.map(u => ({ ...u })), a = units.find(u => u.id === attackerId)!, t = units.find(u => u.id === targetId)!;
+  t.hp -= a.hp;
+  let log: string;
+  if (t.hp <= 0) {
+    const index = units.findIndex(u => u.id === t.id); units.splice(index, 1);
+    a.x = t.x; a.y = t.y;
+    log = `${label(a)} cleans up ${label(t)} at ${name(a)}.`;
+  } else log = `${label(a)} damages ${label(t)} from safety. ${label(t)} has ${t.hp} HP left.`;
+  const winner: Side | null = !units.some(u => u.side === "black" && u.kind === "king") ? "white" : null;
+  return { ...g, units, cleanupTargets: [], winner, log: [log, ...g.log] };
+}
 
 function distance(a: Pos, b: Pos) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
 function enemyOrders(g: Game): Order[] {
@@ -90,11 +108,12 @@ function fight(a: Unit, b: Unit, destination: Pos, events: string[]): Unit | nul
 const label = (u: Unit) => `${u.side === "white" ? "White" : "Black"} ${u.kind}`;
 
 export function resolve(g: Game): Game {
-  if (g.winner || !g.planned.length) return g;
+  if (g.winner || g.cleanupTargets.length || !g.planned.length) return g;
   const black = enemyOrders(g), orders = [...g.planned, ...black];
   const original = new Map(g.units.map(u => [u.id, { ...u }]));
   const byUnit = new Map(orders.map(o => [o.unitId, o]));
   const handled = new Set<string>(), survivors = new Map(g.units.map(u => [u.id, { ...u }])), events: string[] = [];
+  const cleanupKillers = new Set<string>();
   const remove = (id: string) => survivors.delete(id);
   const put = (u: Unit) => survivors.set(u.id, u);
   // Reciprocal target orders are direct fights. Empty-square contests use the
@@ -106,15 +125,24 @@ export function resolve(g: Game): Game {
     if (!mutual && !contest) continue;
     handled.add(a.id); handled.add(b.id); remove(a.id); remove(b.id);
     const winner = fight({ ...a }, { ...b }, contest ? orders[i].to : (a.hp > b.hp ? orders[i].to : orders[j].to), events);
-    if (winner) put(winner);
+    if (winner) {
+      put(winner);
+      const loser = winner.id === a.id ? b : a;
+      if (loser.side === "white" && winner.side === "black") cleanupKillers.add(winner.id);
+    }
   }
   for (const order of orders) {
     if (handled.has(order.unitId) || !survivors.has(order.unitId)) continue;
     const mover = survivors.get(order.unitId)!, target = at(g, order.to), targetOrder = target ? byUnit.get(target.id) : undefined;
     if (target && target.side !== mover.side && !handled.has(target.id) && !targetOrder) {
-      remove(mover.id); remove(target.id);
-      const winner = fight({ ...mover }, { ...target }, order.to, events);
-      if (winner) put(winner);
+      // An idle unit cannot retaliate. The attacker deals its HP as damage;
+      // it only occupies the square once that damage finishes the defender.
+      target.hp -= mover.hp;
+      if (target.hp <= 0) {
+        remove(target.id); mover.x = order.to.x; mover.y = order.to.y;
+        events.push(`${label(mover)} freely captures ${label(target)} at ${name(order.to)}.`);
+        if (target.side === "white" && mover.side === "black") cleanupKillers.add(mover.id);
+      } else events.push(`${label(mover)} freely hits ${label(target)} for ${mover.hp}. ${label(target)} has ${target.hp} HP left.`);
     } else {
       mover.x = order.to.x; mover.y = order.to.y;
       events.push(target ? `${label(mover)} takes ${name(order.to)} as ${label(target)} moves away.` : `${label(mover)} moves to ${name(order.to)}.`);
@@ -124,5 +152,10 @@ export function resolve(g: Game): Game {
   const whiteKing = units.some(u => u.side === "white" && u.kind === "king"), blackKing = units.some(u => u.side === "black" && u.kind === "king");
   const winner: Side | null = !whiteKing ? "black" : !blackKing ? "white" : null;
   if (winner) events.unshift(`${winner === "white" ? "White" : "Black"} captures the king and wins.`);
-  return { units, planned: [], turn: g.turn + 1, log: events.slice(0, 8), winner };
+  const cleanupTargets = winner ? [] : [...cleanupKillers].filter(id => {
+    const target = units.find(u => u.id === id);
+    return !!target && units.some(u => u.side === "white" && legal({ ...g, units, planned: [], cleanupTargets: [], winner: null }, u).some(p => same(p, target)));
+  });
+  if (cleanupTargets.length) events.unshift("Cleanup opportunity: a friendly piece can strike the enemy that just captured your ally.");
+  return { units, planned: [], cleanupTargets, turn: g.turn + 1, log: events.slice(0, 8), winner };
 }

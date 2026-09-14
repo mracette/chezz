@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { HP, newGame, queue, resolve } from "../src/game/simultaneous";
+import { HP, cleanup, newGame, queue, resolve } from "../src/game/simultaneous";
 import type { Game, Unit } from "../src/game/simultaneous";
 
-function game(units: Unit[]): Game { return { units, planned: [], turn: 1, log: [], winner: null }; }
+function game(units: Unit[]): Game { return { units, planned: [], cleanupTargets: [], turn: 1, log: [], winner: null }; }
 describe("simultaneous core", () => {
   it("starts with material-value health and accepts up to three distinct orders", () => {
     const g = newGame();
@@ -36,5 +36,20 @@ describe("simultaneous core", () => {
     g.units.push({ id: "bait", side: "white", kind: "pawn", hp: 1, x: 1, y: 4 });
     const result = resolve(queue(g, { unitId: "w", to: { x: 0, y: 3 } }));
     expect(result.units.find(u => u.id === "w")?.x).toBe(0);
+  });
+  it("offers one optional cleanup only after an enemy destroys a friendly piece", () => {
+    const g = game([
+      { id: "w", side: "white", kind: "pawn", hp: 1, x: 1, y: 4 },
+      { id: "support", side: "white", kind: "bishop", hp: 3, x: 2, y: 5 },
+      { id: "b", side: "black", kind: "knight", hp: 3, x: 2, y: 2 },
+      { id: "wk", side: "white", kind: "king", hp: 5, x: 7, y: 7 },
+      { id: "bk", side: "black", kind: "king", hp: 5, x: 7, y: 0 },
+    ]);
+    // The black knight's best attack is b4; the player pawn stays idle.
+    const after = resolve(queue(g, { unitId: "wk", to: { x: 6, y: 7 } }));
+    expect(after.cleanupTargets).toContain("b");
+    const cleaned = cleanup(after, "support", "b");
+    expect(cleaned.cleanupTargets).toEqual([]);
+    expect(cleaned.units.find(u => u.id === "b")).toBeUndefined();
   });
 });

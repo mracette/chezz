@@ -13,13 +13,19 @@ fun?
   forward and capture diagonally.
 - Health uses material values: pawn 1, knight/bishop 3, rook 5, queen 9, king
   5. Capturing the king wins.
-- Moving into an idle enemy is a free fight. The survivor loses the opponent's
-  HP and occupies the square. Equal HP destroys both pieces.
+- Moving into an idle enemy is a free hit: the defender loses the attacker's
+  HP and does not retaliate. If destroyed, the attacker occupies its square.
+  Reciprocal attacks and empty-square contests are the only situations where
+  both units trade HP; equal HP destroys both pieces.
 - Reciprocal attacks and simultaneous contests for an empty square use the
   same fight rule.
 - A targeted piece with an order escapes to its destination; the attacker takes
   its original square without a fight.
 - Player orders stay editable until Resolve. Enemy orders are hidden.
+- After resolution, if an enemy destroyed a player piece, the player gets one
+  optional **Cleanup** reaction before planning resumes. A surviving player
+  piece with normal line of sight may strike that specific enemy immediately,
+  or the player may decline. The enemy does not receive this reaction yet.
 
 ## Deferred deliberately
 
