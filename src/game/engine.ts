@@ -366,6 +366,35 @@ export function attackSquares(g: Game, p: Piece, ignoreActed = false): Pos[] {
     }
   return out;
 }
+export function inCheck(g: Game, side: Side) {
+  const king = g.pieces.find((p) => p.side === side && p.kind === "king");
+  return !!king && g.pieces.some(
+    (p) =>
+      p.side !== side &&
+      attackSquares(g, p, true).some((square) => same(square, king)),
+  );
+}
+// The Academy puzzle has no special moves. Checking king escapes is enough for
+// its authored mate-in-one position; later battles use the tactics rules.
+export function checkmated(g: Game, side: Side) {
+  if (!isClassicalOpening(g) || !inCheck(g, side)) return false;
+  const king = g.pieces.find((p) => p.side === side && p.kind === "king");
+  if (!king) return true;
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dy = -1; dy <= 1; dy++) {
+      if (!dx && !dy) continue;
+      const to = { x: king.x + dx, y: king.y + dy };
+      const occupant = pieceAt(g, to);
+      if (!inside(to) || isHole(g, to) || occupant?.side === side) continue;
+      const sim = structuredClone(g);
+      sim.pieces = sim.pieces.filter((p) => p.id !== occupant?.id);
+      const moved = sim.pieces.find((p) => p.id === king.id)!;
+      moved.x = to.x;
+      moved.y = to.y;
+      if (!inCheck(sim, side)) return false;
+    }
+  return true;
+}
 function classicalAttackSquares(g: Game, p: Piece): Pos[] {
   const out: Pos[] = [];
   const add = (q: Pos) => { if (inside(q) && !isHole(g, q)) out.push(q); };
@@ -697,6 +726,11 @@ export function attack(g0: Game, id: string, targetId: string): Game {
   delete g.undo;
   record(g, id + " attack " + targetId);
   terminal(g);
+  if (classical && g.screen === "battle" && p.side === "player" && checkmated(g, "enemy")) {
+    win(g);
+    log(g, "Checkmate. The Academy opening is solved.");
+    return g;
+  }
   if (classical && g.screen === "battle" && p.side === "player") return endPhase(g);
   return g;
 }

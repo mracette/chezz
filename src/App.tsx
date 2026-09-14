@@ -677,14 +677,14 @@ export default function App() {
             <div className="eyebrow">
               YOUR OBJECTIVE <span>◇</span>
             </div>
-            <h2>{classicalOpening ? "Capture the king in one move." : "Capture the king."}</h2>
+            <h2>{classicalOpening ? "Find checkmate in one." : "Capture the king."}</h2>
             <p>
               {encounter.boss
                 ? bossGuarded
                   ? "Guarded: adjacent allies reduce damage by 2."
                   : "Exposed: the king has no adjacent guards."
                 : classicalOpening
-                  ? "This opening uses normal chess movement. Every piece has 1 HP; captures are immediate."
+                  ? "The black king is boxed in. Use normal chess movement to deliver checkmate in one move."
                   : "Reduce the enemy king’s HP to zero. Keep yours alive."}
             </p>
             <div className="material-count boss-count">
@@ -1248,11 +1248,11 @@ export default function App() {
             </div>
             <div>
               <b>02</b>
-              <h3>Capture the enemy king.</h3>
+              <h3>{classicalOpening ? "Deliver checkmate." : "Capture the enemy king."}</h3>
               <p>
-                Reduce the enemy king’s health to zero to win immediately. Other
-                enemies may remain on the board. There is no round limit.
-                Optional objectives award extra gold.
+                {classicalOpening
+                  ? "The first puzzle ends when the black king is in check with no legal adjacent escape. This is the only battle that uses checkmate; later Chezz battles return to capturing the king’s health bar."
+                  : "Reduce the enemy king’s health to zero to win immediately. Other enemies may remain on the board. There is no round limit. Optional objectives award extra gold."}
               </p>
             </div>
             <div>

@@ -3,6 +3,7 @@ import {
   newGame,
   makePiece,
   moves,
+  targets,
   attackSquares,
   attack,
   attackDistances,
@@ -24,6 +25,7 @@ import {
   bonusMet,
   same,
   victims,
+  checkmated,
 } from "../src/game/engine";
 import type { Game } from "../src/game/engine";
 function arena(): Game {
@@ -43,11 +45,11 @@ describe("activation and geometry", () => {
     const queen = g.pieces.find((p) => p.side === "player" && p.kind === "queen")!;
     const pawn = g.pieces.find((p) => p.side === "player" && p.kind === "pawn")!;
     expect(queen.hp).toBe(1);
-    // Queen's own pawn blocks d-file, while the open e2 diagonal is legal.
-    expect(moves(g, queen)).toContainEqual({ x: 4, y: 6 });
-    expect(moves(g, queen)).not.toContainEqual({ x: 3, y: 6 });
-    expect(moves(g, pawn)).toContainEqual({ x: 3, y: 4 });
-    const next = move(g, pawn.id, { x: 3, y: 4 });
+    // The queen sees the f7 pawn on her normal diagonal; the e-pawn advances forward.
+    expect(moves(g, queen)).toContainEqual({ x: 6, y: 2 });
+    expect(targets(g, queen).map((p) => p.kind)).toContain("pawn");
+    expect(moves(g, pawn)).toContainEqual({ x: 4, y: 3 });
+    const next = move(g, pawn.id, { x: 4, y: 3 });
     expect(next.turn).toBe("enemy");
     expect(next.pieces.filter((p) => p.side === "player" && !p.acted)).toHaveLength(0);
   });
@@ -63,6 +65,15 @@ describe("activation and geometry", () => {
     expect(next.pieces.find((p) => p.id === "target")).toBeUndefined();
     expect(next.pieces.find((p) => p.id === "rook")).toMatchObject({ x: 0, y: 4 });
     expect(next.turn).toBe("enemy");
+  });
+  it("Academy opening is an actual mate-in-one, not a king chase", () => {
+    const g = newGame("ACADEMY", "academy");
+    const queen = g.pieces.find((p) => p.side === "player" && p.kind === "queen")!;
+    const pawn = g.pieces.find((p) => p.side === "enemy" && p.kind === "pawn")!;
+    const next = attack(g, queen.id, pawn.id);
+    expect(checkmated(next, "enemy")).toBe(true);
+    expect(next.screen).toBe("reward");
+    expect(next.pieces.find((p) => p.id === queen.id)).toMatchObject({ x: 5, y: 1 });
   });
   it("finds an attack route around a wall instead of waiting behind it", () => {
     const g = arena();

@@ -402,20 +402,20 @@ export const STARTERS: [Kind, number, number][] = [
 // It is a six-piece "mini opening," not a full orthodox chess setup: it gives
 // each chess movement pattern room to be read before tactics rules arrive.
 export const ACADEMY_STARTERS: [Kind, number, number][] = [
-  ["king", 4, 7],
-  ["queen", 3, 7],
+  ["king", 6, 7],
+  ["queen", 7, 3],
   ["rook", 0, 7],
-  ["bishop", 2, 7],
-  ["knight", 1, 7],
-  ["pawn", 3, 6],
+  ["bishop", 2, 4],
+  ["knight", 5, 5],
+  ["pawn", 4, 4],
 ];
 export const ACADEMY_ENEMIES: EnemySpawn[] = [
   ["king", 4, 0],
   ["queen", 3, 0],
-  ["rook", 7, 0],
+  ["rook", 0, 0],
   ["bishop", 5, 0],
   ["knight", 6, 0],
-  ["pawn", 3, 1],
+  ["pawn", 5, 1],
 ];
 export const SETS = [
   {

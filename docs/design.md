@@ -37,10 +37,11 @@ Tests cover significant rules and interactions, seeded progression, and full-flo
 ## Familiar opening experiment
 
 The **Academy Board** is an isolated onboarding experiment. Its first battle is
-a six-piece mini opening: pieces have orthodox chess movement, one piece acts
-per side per turn, and all pieces have one health. A capture moves onto the
-captured square and is decisive. It intentionally omits check, castling, and
-en passant; the goal is recognition, not chess simulation.
+a six-piece, authored mate-in-one: pieces have orthodox chess movement, one
+piece acts per side per turn, and all pieces have one health. A capture moves
+onto the captured square and is decisive. Checkmate ends this opening; it
+intentionally omits castling and en passant. The goal is recognition, not full
+chess simulation.
 
 Winning graduates the run into the normal health-bar tactics rules and restores
 the king to its tactics health pool. This is the proposed pacing: **familiar
