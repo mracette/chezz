@@ -68,6 +68,8 @@ The GitHub Actions workflow checks rules, builds, and runs browser tests before 
 
 In repository **Settings → Pages**, select **GitHub Actions** as the source. Relative asset URLs support the repository subpath, and there is no backend or runtime API key.
 
+After Pages is available, set the repository Actions variable **PAGES_ENABLED** to **true**. Until then, the workflow runs verification and saves the build artifact without attempting publication.
+
 The repository may remain private if the account's GitHub plan supports Pages for private repositories. Website publication and source-repository visibility are separate.
 
 ## MVP boundaries
