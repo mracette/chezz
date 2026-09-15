@@ -23,6 +23,8 @@ fun?
 - A targeted piece with an order escapes to its destination; the attacker takes
   its original square without a fight.
 - Player orders stay editable until Resolve. Enemy orders are hidden.
+- A player piece may instead **Defend** in place. It spends an order and turns
+  a direct attack on that piece into a reciprocal HP trade for that resolution.
 - After resolution, if an enemy destroyed a player piece, the player gets one
   optional **Cleanup** reaction before planning resumes. A surviving player
   piece with normal line of sight may strike that specific enemy immediately,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HP, cleanup, legal, newGame, queue, resolve } from "../src/game/simultaneous";
+import { HP, cleanup, defend, legal, newGame, queue, resolve } from "../src/game/simultaneous";
 import type { Game, Unit } from "../src/game/simultaneous";
 
 function game(units: Unit[]): Game { return { units, planned: [], cleanupTargets: [], turn: 1, log: [], winner: null }; }
@@ -35,6 +35,17 @@ describe("simultaneous core", () => {
     const result = resolve(queue(g, { unitId: "w", to: { x: 3, y: 3 } }));
     expect(result.units.find(u => u.id === "w")).toMatchObject({ hp: 2, x: 3, y: 3 });
     expect(result.units.find(u => u.id === "b")).toBeUndefined();
+  });
+  it("makes a defended piece trade material instead of taking a free hit", () => {
+    const g = game([
+      { id: "p", side: "white", kind: "pawn", hp: 1, x: 0, y: 3 },
+      { id: "r", side: "black", kind: "rook", hp: 5, x: 0, y: 4 },
+      { id: "wk", side: "white", kind: "king", hp: 5, x: 7, y: 7 },
+      { id: "bk", side: "black", kind: "king", hp: 5, x: 7, y: 0 },
+    ]);
+    const after = resolve(defend(g, "p"));
+    expect(after.units.find(u => u.id === "p")).toBeUndefined();
+    expect(after.units.find(u => u.id === "r")).toMatchObject({ x: 0, y: 3, hp: 4 });
   });
   it("lets a moving target escape and grants its square to the attacker", () => {
     const g = game([

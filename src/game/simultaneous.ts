@@ -2,7 +2,7 @@ export type Side = "white" | "black";
 export type Kind = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
 export type Pos = { x: number; y: number };
 export type Unit = Pos & { id: string; side: Side; kind: Kind; hp: number };
-export type Order = { unitId: string; to: Pos };
+export type Order = { unitId: string; to: Pos; defend?: boolean };
 export type Game = { units: Unit[]; planned: Order[]; cleanupTargets: string[]; turn: number; log: string[]; winner: Side | null };
 
 export const HP: Record<Kind, number> = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 5 };
@@ -68,6 +68,11 @@ export function queue(g: Game, order: Order): Game {
   if (!u || u.side !== "white" || !legal(g, u).some(p => same(p, order.to))) return g;
   return { ...g, planned: [...g.planned, order] };
 }
+export function defend(g: Game, unitId: string): Game {
+  const u = unit(g, unitId);
+  if (!u || u.side !== "white" || g.winner || g.cleanupTargets.length || g.planned.length >= 3 || g.planned.some(o => o.unitId === unitId)) return g;
+  return { ...g, planned: [...g.planned, { unitId, to: { x: u.x, y: u.y }, defend: true }] };
+}
 export function isPawnAmbush(g: Game, u: Unit, to: Pos) {
   return u.kind === "pawn" && Math.abs(to.x - u.x) === 1 && !at(g, to);
 }
@@ -121,7 +126,7 @@ export function resolve(g: Game): Game {
   const byUnit = new Map(orders.map(o => [o.unitId, o]));
   const ambushes = orders
     .map(order => ({ order, attacker: original.get(order.unitId)! }))
-    .filter(({ order, attacker }) => isPawnAmbush(g, attacker, order.to));
+    .filter(({ order, attacker }) => !order.defend && isPawnAmbush(g, attacker, order.to));
   const handled = new Set<string>(), survivors = new Map(g.units.map(u => [u.id, { ...u }])), events: string[] = [];
   const cleanupKillers = new Set<string>();
   const remove = (id: string) => survivors.delete(id);
@@ -131,7 +136,7 @@ export function resolve(g: Game): Game {
   for (let i = 0; i < orders.length; i++) for (let j = i + 1; j < orders.length; j++) {
     const a = original.get(orders[i].unitId)!, b = original.get(orders[j].unitId)!;
     const mutual = same(orders[i].to, b) && same(orders[j].to, a);
-    const contest = !isPawnAmbush(g, a, orders[i].to) && !isPawnAmbush(g, b, orders[j].to) && !at(g, orders[i].to) && same(orders[i].to, orders[j].to);
+    const contest = !orders[i].defend && !orders[j].defend && !isPawnAmbush(g, a, orders[i].to) && !isPawnAmbush(g, b, orders[j].to) && !at(g, orders[i].to) && same(orders[i].to, orders[j].to);
     if (!mutual && !contest) continue;
     handled.add(a.id); handled.add(b.id); remove(a.id); remove(b.id);
     const winner = fight({ ...a }, { ...b }, contest ? orders[i].to : (a.hp > b.hp ? orders[i].to : orders[j].to), events);
@@ -143,6 +148,7 @@ export function resolve(g: Game): Game {
   }
   for (const order of orders) {
     if (handled.has(order.unitId) || !survivors.has(order.unitId)) continue;
+    if (order.defend) continue;
     if (isPawnAmbush(g, original.get(order.unitId)!, order.to)) continue;
     const mover = survivors.get(order.unitId)!, target = at(g, order.to), targetOrder = target ? byUnit.get(target.id) : undefined;
     const ambush = ambushes.find(({ attacker, order: held }) =>
@@ -161,7 +167,15 @@ export function resolve(g: Game): Game {
       }
       events.push(`${label(pawn)} springs an ambush at ${name(order.to)} for ${pawn.hp}. ${label(mover)} has ${mover.hp} HP left.`);
     }
-    if (target && target.side !== mover.side && !handled.has(target.id) && !targetOrder) {
+    if (target && target.side !== mover.side && !handled.has(target.id) && targetOrder?.defend) {
+      remove(mover.id); remove(target.id); handled.add(target.id);
+      const winner = fight({ ...mover }, { ...target }, order.to, events);
+      if (winner) {
+        put(winner);
+        const loser = winner.id === mover.id ? target : mover;
+        if (loser.side === "white" && winner.side === "black") cleanupKillers.add(winner.id);
+      }
+    } else if (target && target.side !== mover.side && !handled.has(target.id) && !targetOrder) {
       // An idle unit cannot retaliate. The attacker deals its HP as damage;
       // it only occupies the square once that damage finishes the defender.
       target.hp -= mover.hp;
