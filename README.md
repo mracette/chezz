@@ -1,4 +1,37 @@
-# Chezz — Between Worlds
+# Chezz — Escape from Exile
+
+This branch is a three-encounter prototype: a lone king, two recruitment/healing
+choices, permanent losses, persistent health, a tilted cartoon board, and
+animated simultaneous orders. Choose **Always trade** or **Free hits** at the
+start to compare the two combat models on identical boards.
+
+```sh
+npm ci
+npm run dev
+```
+
+Open the local URL, begin the rebellion, select the king and a highlighted
+destination, then Resolve. One order per piece, up to three as your army grows.
+The enemy plan appears during playback. Defeat every enemy to reach camp.
+
+`npm test`, `npm run build`, and `npm run test:e2e` validate the exile slice.
+The current browser suite covers this interface; earlier browser scenarios
+remain in the repository as references to the previous prototype.
+
+See [docs/exile-run.md](docs/exile-run.md) for the rules, scope, and playtest
+questions. The preview workflow builds a deployable artifact on branch pushes.
+Public publication is pending repository-admin approval: allow the exact
+`prototype/exile-run` branch in the `github-pages` environment, then manually
+run the preview workflow with `publish` enabled. Its intended URL is
+[mracette.github.io/chezz/exile](https://mracette.github.io/chezz/exile/).
+The workflow preserves the main game at its usual root URL.
+
+---
+
+The documentation below describes the earlier Between Worlds prototype, whose
+content and engine remain available for reference.
+
+# Chezz — Between Worlds (earlier prototype)
 
 A browser tactics game with chess pieces. A complete first-floor prototype: five battles, a boss, shops, an event, two starting sets, gambits, upgrades, consumables, and local save/resume.
 

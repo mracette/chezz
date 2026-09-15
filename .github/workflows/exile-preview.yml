@@ -1,0 +1,71 @@
+name: Publish exile prototype preview
+on:
+  push:
+    branches: [prototype/exile-run]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish after an admin allows prototype/exile-run in github-pages
+        type: boolean
+        default: false
+permissions:
+  contents: read
+# Use the same queue as the existing main Pages workflow.
+concurrency:
+  group: pages-refs/heads/main
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/prototype/exile-run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: prototype
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: published-main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            prototype/package-lock.json
+            published-main/package-lock.json
+      - run: npm ci
+        working-directory: prototype
+      - run: npm test
+        working-directory: prototype
+      - run: npm run build
+        working-directory: prototype
+      - run: npx playwright install --with-deps chromium
+        working-directory: prototype
+      - run: npm run test:e2e
+        working-directory: prototype
+      - run: npm ci
+        working-directory: published-main
+      - run: npm run build
+        working-directory: published-main
+      - name: Keep the main game and add the exile preview
+        run: |
+          mkdir -p preview-site/exile
+          cp -R published-main/dist/. preview-site/
+          cp -R prototype/dist/. preview-site/exile/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: preview-site
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.publish.outputs.page_url }}exile/
+    steps:
+      - name: Publish preview
+        id: publish
+        uses: actions/deploy-pages@v4
