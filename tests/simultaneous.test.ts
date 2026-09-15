@@ -12,15 +12,17 @@ describe("simultaneous core", () => {
     expect(n.planned).toHaveLength(1);
     expect(queue(n, { unitId: q.id, to: { x: 3, y: 2 } })).toBe(n);
   });
-  it("only lets pawns move diagonally when an enemy occupies that square", () => {
+  it("lets pawns hold an empty diagonal and ambush an enemy that enters it", () => {
     const g = game([
       { id: "p", side: "white", kind: "pawn", hp: 1, x: 4, y: 4 },
       { id: "wk", side: "white", kind: "king", hp: 5, x: 7, y: 7 },
       { id: "bk", side: "black", kind: "king", hp: 5, x: 7, y: 0 },
     ]);
-    expect(legal(g, g.units[0])).not.toContainEqual({ x: 3, y: 3 });
-    g.units.push({ id: "enemy", side: "black", kind: "pawn", hp: 1, x: 3, y: 3 });
     expect(legal(g, g.units[0])).toContainEqual({ x: 3, y: 3 });
+    g.units.push({ id: "enemy", side: "black", kind: "pawn", hp: 1, x: 3, y: 2 });
+    const after = resolve(queue(g, { unitId: "p", to: { x: 3, y: 3 } }));
+    expect(after.units.find(u => u.id === "enemy")).toBeUndefined();
+    expect(after.units.find(u => u.id === "p")).toMatchObject({ x: 3, y: 3, hp: 1 });
   });
   it("makes reciprocal attacks a single HP-subtraction fight", () => {
     const g = game([

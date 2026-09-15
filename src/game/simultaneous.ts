@@ -48,7 +48,10 @@ export function legal(g: Game, u: Unit): Pos[] {
     if (empty(forward)) out.push(forward);
     for (const dx of [-1, 1]) {
       const p = { x: u.x + dx, y: u.y + dy }, target = at(g, p);
-      if (inside(p) && target && target.side !== u.side) out.push(p);
+      // A diagonal pawn order can be a normal capture or a held attack. An
+      // empty diagonal is not a move: the pawn waits and strikes only if an
+      // enemy chooses that square during simultaneous resolution.
+      if (inside(p) && (!target || target.side !== u.side)) out.push(p);
     }
     return out;
   }
@@ -64,6 +67,9 @@ export function queue(g: Game, order: Order): Game {
   const u = unit(g, order.unitId);
   if (!u || u.side !== "white" || !legal(g, u).some(p => same(p, order.to))) return g;
   return { ...g, planned: [...g.planned, order] };
+}
+export function isPawnAmbush(g: Game, u: Unit, to: Pos) {
+  return u.kind === "pawn" && Math.abs(to.x - u.x) === 1 && !at(g, to);
 }
 export function removeOrder(g: Game, index: number): Game { return { ...g, planned: g.planned.filter((_, i) => i !== index) }; }
 export function declineCleanup(g: Game): Game {
@@ -90,6 +96,7 @@ function enemyOrders(g: Game): Order[] {
   const choices: { order: Order; score: number }[] = [];
   const whiteKing = g.units.find(u => u.side === "white" && u.kind === "king")!;
   for (const u of g.units.filter(u => u.side === "black")) for (const to of legal(g, u)) {
+    if (isPawnAmbush(g, u, to)) continue;
     const target = at(g, to);
     choices.push({ order: { unitId: u.id, to }, score: target?.side === "white" ? 100 + HP[target.kind] : -distance(to, whiteKing) });
   }
@@ -112,6 +119,9 @@ export function resolve(g: Game): Game {
   const black = enemyOrders(g), orders = [...g.planned, ...black];
   const original = new Map(g.units.map(u => [u.id, { ...u }]));
   const byUnit = new Map(orders.map(o => [o.unitId, o]));
+  const ambushes = orders
+    .map(order => ({ order, attacker: original.get(order.unitId)! }))
+    .filter(({ order, attacker }) => isPawnAmbush(g, attacker, order.to));
   const handled = new Set<string>(), survivors = new Map(g.units.map(u => [u.id, { ...u }])), events: string[] = [];
   const cleanupKillers = new Set<string>();
   const remove = (id: string) => survivors.delete(id);
@@ -121,7 +131,7 @@ export function resolve(g: Game): Game {
   for (let i = 0; i < orders.length; i++) for (let j = i + 1; j < orders.length; j++) {
     const a = original.get(orders[i].unitId)!, b = original.get(orders[j].unitId)!;
     const mutual = same(orders[i].to, b) && same(orders[j].to, a);
-    const contest = !at(g, orders[i].to) && same(orders[i].to, orders[j].to);
+    const contest = !isPawnAmbush(g, a, orders[i].to) && !isPawnAmbush(g, b, orders[j].to) && !at(g, orders[i].to) && same(orders[i].to, orders[j].to);
     if (!mutual && !contest) continue;
     handled.add(a.id); handled.add(b.id); remove(a.id); remove(b.id);
     const winner = fight({ ...a }, { ...b }, contest ? orders[i].to : (a.hp > b.hp ? orders[i].to : orders[j].to), events);
@@ -133,7 +143,24 @@ export function resolve(g: Game): Game {
   }
   for (const order of orders) {
     if (handled.has(order.unitId) || !survivors.has(order.unitId)) continue;
+    if (isPawnAmbush(g, original.get(order.unitId)!, order.to)) continue;
     const mover = survivors.get(order.unitId)!, target = at(g, order.to), targetOrder = target ? byUnit.get(target.id) : undefined;
+    const ambush = ambushes.find(({ attacker, order: held }) =>
+      attacker.side !== mover.side && same(held.to, order.to) && survivors.has(attacker.id),
+    );
+    // Held pawn attacks fire when an opponent selects their empty diagonal.
+    // A surviving target still completes its movement; a defeated target is
+    // replaced by the pawn, exactly like a successful normal capture.
+    if (ambush && !isPawnAmbush(g, original.get(order.unitId)!, order.to)) {
+      const pawn = survivors.get(ambush.attacker.id)!;
+      mover.hp -= pawn.hp;
+      if (mover.hp <= 0) {
+        remove(mover.id); pawn.x = order.to.x; pawn.y = order.to.y;
+        events.push(`${label(pawn)} springs an ambush at ${name(order.to)} and captures ${label(mover)}.`);
+        continue;
+      }
+      events.push(`${label(pawn)} springs an ambush at ${name(order.to)} for ${pawn.hp}. ${label(mover)} has ${mover.hp} HP left.`);
+    }
     if (target && target.side !== mover.side && !handled.has(target.id) && !targetOrder) {
       // An idle unit cannot retaliate. The attacker deals its HP as damage;
       // it only occupies the square once that damage finishes the defender.
@@ -148,6 +175,9 @@ export function resolve(g: Game): Game {
       events.push(target ? `${label(mover)} takes ${name(order.to)} as ${label(target)} moves away.` : `${label(mover)} moves to ${name(order.to)}.`);
     }
   }
+  for (const { attacker, order } of ambushes)
+    if (survivors.has(attacker.id) && !orders.some(other => other.unitId !== attacker.id && original.get(other.unitId)!.side !== attacker.side && same(other.to, order.to)))
+      events.push(`${label(attacker)} holds ${name(order.to)}, but no enemy enters.`);
   const units = [...survivors.values()];
   const whiteKing = units.some(u => u.side === "white" && u.kind === "king"), blackKing = units.some(u => u.side === "black" && u.kind === "king");
   const winner: Side | null = !whiteKing ? "black" : !blackKing ? "white" : null;

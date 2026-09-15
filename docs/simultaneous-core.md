@@ -10,7 +10,8 @@ fun?
 - An order is only a piece and a legal chess destination. A piece and a
   destination can each appear once per side each phase.
 - Chess geometry applies: sliding pieces use rays; knights jump; pawns move
-  forward and capture diagonally.
+  forward and capture diagonally. A pawn may also reserve an empty diagonal as
+  a held attack: it remains in place unless an enemy chooses that square.
 - Health uses material values: pawn 1, knight/bishop 3, rook 5, queen 9, king
   5. Capturing the king wins.
 - Moving into an idle enemy is a free hit: the defender loses the attacker's
