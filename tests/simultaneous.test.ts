@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HP, cleanup, newGame, queue, resolve } from "../src/game/simultaneous";
+import { HP, cleanup, legal, newGame, queue, resolve } from "../src/game/simultaneous";
 import type { Game, Unit } from "../src/game/simultaneous";
 
 function game(units: Unit[]): Game { return { units, planned: [], cleanupTargets: [], turn: 1, log: [], winner: null }; }
@@ -11,6 +11,16 @@ describe("simultaneous core", () => {
     const n = queue(g, { unitId: q.id, to: { x: 3, y: 3 } });
     expect(n.planned).toHaveLength(1);
     expect(queue(n, { unitId: q.id, to: { x: 3, y: 2 } })).toBe(n);
+  });
+  it("only lets pawns move diagonally when an enemy occupies that square", () => {
+    const g = game([
+      { id: "p", side: "white", kind: "pawn", hp: 1, x: 4, y: 4 },
+      { id: "wk", side: "white", kind: "king", hp: 5, x: 7, y: 7 },
+      { id: "bk", side: "black", kind: "king", hp: 5, x: 7, y: 0 },
+    ]);
+    expect(legal(g, g.units[0])).not.toContainEqual({ x: 3, y: 3 });
+    g.units.push({ id: "enemy", side: "black", kind: "pawn", hp: 1, x: 3, y: 3 });
+    expect(legal(g, g.units[0])).toContainEqual({ x: 3, y: 3 });
   });
   it("makes reciprocal attacks a single HP-subtraction fight", () => {
     const g = game([

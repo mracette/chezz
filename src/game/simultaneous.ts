@@ -48,7 +48,7 @@ export function legal(g: Game, u: Unit): Pos[] {
     if (empty(forward)) out.push(forward);
     for (const dx of [-1, 1]) {
       const p = { x: u.x + dx, y: u.y + dy }, target = at(g, p);
-      if (inside(p) && target?.side !== u.side) out.push(p);
+      if (inside(p) && target && target.side !== u.side) out.push(p);
     }
     return out;
   }
