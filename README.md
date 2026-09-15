@@ -19,9 +19,12 @@ The current browser suite covers this interface; earlier browser scenarios
 remain in the repository as references to the previous prototype.
 
 See [docs/exile-run.md](docs/exile-run.md) for the rules, scope, and playtest
-questions. A branch-specific preview is published at
-**[mracette.github.io/chezz/exile](https://mracette.github.io/chezz/exile/)**;
-the main game remains at its usual root URL.
+questions. The preview workflow builds a deployable artifact on branch pushes.
+Public publication is pending repository-admin approval: allow the exact
+`prototype/exile-run` branch in the `github-pages` environment, then manually
+run the preview workflow with `publish` enabled. Its intended URL is
+[mracette.github.io/chezz/exile](https://mracette.github.io/chezz/exile/).
+The workflow preserves the main game at its usual root URL.
 
 ---
 

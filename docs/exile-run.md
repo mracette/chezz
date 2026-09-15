@@ -76,6 +76,13 @@ this branch at `/chezz/exile/`. It requires the exact prototype branch to be
 allowed by the existing Pages environment. A later main-only Pages deployment
 can remove this temporary preview until this workflow publishes again.
 
+Branch pushes build and validate an artifact without deploying. Publication is
+currently blocked because the connected account has push access, not admin
+access. A repository admin must add `prototype/exile-run` to the `github-pages`
+environment's allowed deployment branches, then manually run the preview
+workflow on that branch with `publish` enabled. This keeps automatic checks
+useful without creating deployments that the environment will reject.
+
 ## Deferred ideas
 
 Gambits, consumables, reserves/squad selection, recruitment variety, bosses,
